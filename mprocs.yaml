@@ -1,0 +1,7 @@
+procs:
+  server:
+    shell: "bun run dev"
+    cwd: "/media/arman/E/project/playground/dhaka-tesla/packages/backend"
+  frontend:
+    shell: "bun run dev"
+    cwd: "/media/arman/E/project/playground/dhaka-tesla/packages/frontend"

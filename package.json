@@ -7,11 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently \"cd packages/frontend && bun run dev\" \"cd packages/backend && bun run dev\""
+    "dev": "mprocs"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "concurrently": "^10.0.5"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
