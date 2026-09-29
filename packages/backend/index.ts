@@ -1,11 +1,7 @@
-const express = require('express');
-const app = express();
-require('dotenv').config();
-const port = process.env.PORT || 5000; 
+// Starts the HTTP server. Everything else lives in src/app.ts.
+import { app } from './src/app';
+import { env } from './src/config/env';
 
-
-app.get('/api', (req: any, res: any) => {
-  res.json({ message: "Hello from the Express backend!" });
+app.listen(env.PORT, () => {
+  console.log(`API listening on port ${env.PORT}`);
 });
-
-app.listen(port, () => console.log(`Backend running on port ${port}`));
