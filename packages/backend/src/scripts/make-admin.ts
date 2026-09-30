@@ -1,5 +1,5 @@
-// Grants the admin role to an existing account, so the first admin can be created
-// without a database GUI. Usage: bun run make-admin user@example.com
+// Grants the admin role to an existing account. An account holds exactly one role, so
+// running this replaces their current role with `admin`. Usage: bun run make-admin user@example.com
 import { pool } from '../db';
 import { usersService } from '../api/users/users.service';
 
@@ -18,10 +18,10 @@ if (!user) {
   process.exit(1);
 }
 
-await usersService.addRole(user.id, 'admin');
-const roles = await usersService.getRoles(user.id);
+await usersService.setRole(user.id, 'admin');
+const updated = await usersService.findByEmail(email);
 
-console.log(`${email} now has roles: ${roles.join(', ')}`);
+console.log(`${email} now has role: ${updated?.role}`);
 console.log('Sign in again so the new access token carries the admin role.');
 
 await pool.end();

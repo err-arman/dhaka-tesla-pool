@@ -1,0 +1,1 @@
+ALTER TABLE "driver_profiles" ADD COLUMN "is_online" boolean DEFAULT false NOT NULL;

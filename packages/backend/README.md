@@ -61,7 +61,7 @@ or invalid.
 | `bun run db:generate` | Generate a migration from the schema files |
 | `bun run db:migrate` | Apply pending migrations |
 | `bun run db:studio` | Open Drizzle Studio |
-| `bun run make-admin <email>` | Grant the admin role to an existing account |
+| `bun run make-admin <email>` | Replace an account's role with `admin` |
 
 ## Endpoints
 
@@ -80,6 +80,7 @@ Base path `/api/v1`. Every error comes back as
 | DELETE | `/users/me` | Bearer | — | 204 (soft delete) |
 | POST | `/drivers/apply` | Bearer | — | 201 driver profile |
 | GET | `/drivers/me` | Bearer | — | 200 driver profile |
+| PATCH | `/drivers/me/online` | Bearer + approved driver | `isOnline` | 200 driver profile, 409 if no vehicle |
 | PATCH | `/drivers/:userId/status` | Bearer + admin | `status` | 200 driver profile |
 | GET | `/vehicles` | Bearer + approved driver | — | 200 vehicle, 404 if none |
 | PUT | `/vehicles` | Bearer + approved driver | `seats?` | 200 vehicle (upsert) |
@@ -135,12 +136,43 @@ keeps working.
   Admins are only created by `bun run make-admin`.
 - Choosing `driver` creates the `users` row, the `driver` role and the `driver_profiles`
   row in **one transaction**. The profile cannot be a follow-up step: a user holding the
-  `driver` role but no profile row would fail `requireApprovedDriver` with a 403.
+  `driver` role but no profile row would fail `requireApprovedDriver` with a 403. The
+  role is written onto the `users` row itself, so there is no second grant to get wrong.
 - The status is `approved`, so a driver can register a vehicle immediately. The domain
   has no review step yet; `INITIAL_DRIVER_STATUS` in `drivers.service.ts` is the one
   place to change when that arrives.
 - `POST /drivers/apply` still exists for a passenger who signed up as a passenger and
   later wants to drive. It shares `driversService.registerProfile` with signup.
+
+### Online is not approved
+
+`driver_profiles` carries two independent notions, and conflating them is the easy
+mistake here:
+
+| Column | Set by | Means |
+| --- | --- | --- |
+| `status` | an admin, or signup | may this person drive at all |
+| `is_online` | the driver | are they working right now |
+
+`PATCH /drivers/me/online` therefore does **not** require the admin role, and
+`PATCH /drivers/:userId/status` does **not** touch `is_online`. Suspending a driver
+leaves their `is_online` as it was, which is correct: the approval is what gates them,
+and the flag becomes true again if they are reinstated.
+
+- The body is `{ isOnline: boolean }`, not a bare toggle. Sending the intended value
+  means a retried request is idempotent instead of flipping the state back.
+- **Going online requires an active vehicle** and answers `409 NO_ACTIVE_VEHICLE`
+  without it. Going offline is never blocked, so a driver can always stop working even
+  if their vehicle was removed underneath them.
+- That rule is enforced in `driversController.setOnline`, not the service. It spans two
+  modules, and `vehicles` already depends on `drivers`, so `drivers.service` importing
+  `vehicles` would be a cycle. The controller is the only layer that sees both — the
+  same seam `users.controller.deleteMe` uses to reach `auth`.
+- The column defaults to `false`, so a newly approved driver is not dispatchable until
+  they choose to be. Added by `20260930092054_driver_online_toggle` as a single
+  `ADD COLUMN ... NOT NULL DEFAULT false`, which needs no backfill.
+- **Nothing reads `is_online` yet.** There is no dispatch or matching code, so this
+  stores the state without changing any behaviour until that exists.
 
 ### One vehicle per driver
 
@@ -173,18 +205,37 @@ migration and never in application code.
 
 Two things are enforced by the database rather than by the service layer:
 
-- `user_roles` has a composite **primary key** on `(user_id, role)`, so the same role
-  cannot be granted twice. `usersRepository.addRole` relies on this with
-  `onConflictDoNothing`, which is what makes two concurrent grants safe; an
-  earlier check-then-insert had a window where both could pass it.
+- `users.role` is a **single `NOT NULL` column**, so an account holds exactly one role
+  and a second grant is impossible rather than merely discouraged. `usersRepository.setRole`
+  replaces the value. This replaced the `user_roles` join table, which could hold any
+  number of rows per user; see `single_role_per_user` below.
 - `sessions.refresh_token_hash` is **indexed**, because every refresh, rotation and
   logout filters on it.
 
-Both were added in the `user_roles_pk_and_session_index` migration. Note that
-`primaryKey`, `index` and `uniqueIndex` must be imported from `drizzle-orm/pg-core`
-in a PostgreSQL project: importing them from `drizzle-orm/cockroach-core` makes
-drizzle-kit silently ignore the constraint, which is how `user_roles` shipped
-without its primary key in the first place.
+The refresh-token index was added in the `user_roles_pk_and_session_index` migration.
+Note that `primaryKey`, `index` and `uniqueIndex` must be imported from
+`drizzle-orm/pg-core` in a PostgreSQL project: importing them from
+`drizzle-orm/cockroach-core` makes drizzle-kit silently ignore the constraint, which is
+how `user_roles` shipped without its primary key in the first place.
+
+### One role per account
+
+`single_role_per_user` collapsed the `user_roles` join table into `users.role`. The
+backfill kept `admin > driver > passenger`, so no one lost a driver profile.
+
+`POST /drivers/apply` therefore **replaces** `passenger` with `driver` rather than adding
+to it, and both writes share the caller's transaction — a failure cannot leave a user
+with a driver profile and a passenger role, or the reverse. The role and the profile are
+created together on driver signup, so "has the driver role" and "has a driver profile" do
+not normally diverge.
+
+One consequence of the precedence: the single account that held `admin` **and** `driver`
+became `admin`, so it keeps an approved driver profile it can no longer reach, because
+`/driver` is gated on the role. Left as-is rather than silently reclassifying an admin.
+
+Changing the JWT claim from `roles: [...]` to `role` invalidates every access token
+already issued, so everyone re-logs-in once. The `payloadSchema` in `authenticate`
+deliberately does not accept the old array shape, so no legacy path is left behind.
 
 ## Architecture
 

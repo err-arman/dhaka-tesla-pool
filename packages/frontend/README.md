@@ -45,11 +45,22 @@ falling back to 5174 will be blocked by CORS.
 
 ## Routes
 
-| Route       | Access        |
-| ----------- | ------------- |
-| `/login`    | public, redirects to `/dashboard` when signed in |
-| `/signup`   | public, redirects when signed in; sends the chosen role, lands on `/driver` or `/dashboard` |
-| `/dashboard`| requires a session |
+| Route        | Access                                                     |
+| ------------ | ---------------------------------------------------------- |
+| `/signin`    | public, redirects to the role's own page when signed in    |
+| `/signup`    | public, redirects when signed in; sends the chosen role     |
+| `/`          | lands on `/driver` or `/passenger` by the user's own role  |
+| `/passenger` | requires a session; the landing page for non-drivers        |
+| `/driver`    | requires a session **and** the `driver` role                |
+
+Landing and gating both come from the role the server returned, not from UI state.
+`lib/roles.ts` holds the two helpers: `isDriver(role)` and `homePathFor(role)`.
+
+`/passenger` and `/driver` are placeholders for now, so `/signin` and `/signup` are the
+only built screens. The driver components (`driver-layout`, `vehicle-card`,
+`driver-status-card`, `driver-online-toggle`, `apply-to-drive`) and the account
+components (`profile-form`, `delete-account`) still exist but nothing imports them yet.
+They are left in place deliberately and are not in the bundle.
 
 ## Structure
 
@@ -57,8 +68,8 @@ falling back to 5174 will be blocked by CORS.
 src/
   components/ui/   shadcn primitives (button, card, form, input, label, separator)
   hooks/           useAuth, route guards
-  lib/             api client, zod schemas, types, cn()
-  pages/           login, signup, dashboard
+  lib/             api client, zod schemas, types, roles, cn()
+  pages/           signin, signup, passenger, driver
   providers/       auth context and provider
 ```
 
@@ -73,25 +84,52 @@ bun run preview   # serve the production build
 
 ## Driver area
 
-`/login` and `/signup` both have a Passenger | Driver tab, but they mean different
-things:
+`/signin` and `/signup` both have a Passenger | Driver tab, but only one of them
+grants anything:
 
-- **On login** the tab is only a landing page. There is one `/auth/login`, the server
-  returns the roles the account actually holds, and a passenger who picks the Driver
-  tab lands on `/driver`, where the backend's guard decides what they may do.
 - **On signup** the tab is a real decision. The chosen `role` is sent to the server,
   which grants it and creates the driver profile in the same transaction. A driver can
-  therefore register a vehicle straight away and is sent to `/driver` after signup.
+  therefore register a vehicle straight away.
+- **On login** the tab only expresses intent. There is one `/auth/login`, the server
+  returns the single role the account holds, and that decides the landing page. A
+  passenger who picks the Driver tab is told they have no driver role and lands on
+  `/passenger` instead of being shown the driver portal and bounced.
+
+Both login and signup route on the user object the server returned rather than reading
+`user` from context afterwards, which would still be stale at that point in the render.
 
 The signup tab lives in form state (`role`, read with `useWatch`) rather than component
 state, so the tab, the card description and the submitted payload cannot disagree.
 `admin` is not an option on either tab; the server rejects it.
 
-- `/driver` — driver status and your vehicle
+### Why only `/driver` is gated
+
+An account holds exactly one role, so `RequireDriver` is a plain comparison: anything
+that is not a driver is redirected to `/passenger`. `/passenger` is not gated, because
+nothing needs to keep a driver out of it — a driver with a passenger role is no longer a
+state the database can represent.
+
+`POST /drivers/apply` **replaces** `passenger` with `driver` rather than adding to it, so
+applying permanently gives up the passenger role. The one-way nature of that is the
+intended trade for now: the two portals are cleanly separate, and if a driver ever needs
+to be a passenger again, that is a deliberate role change rather than an accident of
+ordering.
+
+An `admin` is not a driver, so `homePathFor('admin')` returns `/passenger`. Admins have no
+portal of their own yet.
+
+- `/driver` — driver status, availability and your vehicle
 - `/driver/vehicle` — register, edit seats, or remove
 
-A passenger who signed up as a passenger can still become a driver later with the
-Apply button on `/driver` (`POST /drivers/apply`).
+Those two pages are the intended shape of the driver area. Right now only `/driver`
+exists and it renders a placeholder, because the pages were being rebuilt and the
+vehicle components are parked. See the note under Routes.
+
+A passenger signs up as a passenger and becomes a driver later with the Apply button
+(`POST /drivers/apply`) in `ApplyToDrive`, which is rendered on `/passenger` rather than
+in the driver area for exactly the gating reason above. Applying adds the role and the
+profile in one transaction and refetches the user, so the next visit to `/` lands on
+`/driver`.
 
 A driver has at most one active vehicle, so `VehicleCard` renders a single vehicle
 rather than a list. A `404` from `GET /vehicles` means "not registered yet" and
@@ -101,7 +139,7 @@ a removed driver can register again.
 
 ## Account management
 
-`/dashboard` carries the whole account surface, because it is where the signed-in
+`/passenger` carries the whole account surface, because it is where the signed-in
 user already lands:
 
 - `ProfileForm` edits `fullName`, `phone` and `avatarUrl`. Email has no input on
@@ -115,6 +153,12 @@ user already lands:
 - `DeleteAccount` is a typed confirmation rather than a dialog: the project has no
   dialog primitive, and adding `@radix-ui/react-dialog` for one destructive button is
   not worth a dependency. The button reveals a field that must read `DELETE` exactly.
+- `DriverOnlineToggle` is the driver's own availability switch, kept separate from the
+  admin-controlled approval `status`: approval is "may this person drive", online is
+  "are they working now". The button is disabled when the account is not approved, so
+  the reason shows before the click rather than after. Going online with no vehicle is
+  left to the server, which answers `409 NO_ACTIVE_VEHICLE`; the toggle shows that
+  message verbatim.
 - `VehicleCard` uses **PUT** to register and **PATCH** to change seats, with a
   `mode` prop choosing the verb and the schema. PATCH requires a value because the
   backend refuses an empty body; PUT allows an empty one so the server can apply its

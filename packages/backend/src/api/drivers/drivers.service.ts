@@ -33,9 +33,13 @@ export const driversService = {
   registerProfile,
 
   /**
-   * Upgrades an existing passenger to a driver. Signup already covers opening an
-   * account as a driver; this is the path for someone who signed up as a passenger
-   * and changed their mind.
+   * Turns the caller into a driver. Signup already covers opening an account as a
+   * driver; this is the path for someone who signed up as a passenger and changed
+   * their mind.
+   *
+   * An account holds exactly one role, so this **replaces** `passenger` with `driver`
+   * rather than adding to it. Both writes share the caller's transaction, so a failure
+   * cannot leave a user with a driver profile and a passenger role, or the reverse.
    */
   async apply(userId: string) {
     try {
@@ -44,7 +48,7 @@ export const driversService = {
         if (existing) throw alreadyDriver();
 
         const profile = await registerProfile(userId, tx);
-        await usersService.addRole(userId, 'driver', tx);
+        await usersService.setRole(userId, 'driver', tx);
         return profile;
       });
     } catch (err) {
@@ -64,6 +68,20 @@ export const driversService = {
   async updateStatus(userId: string, status: DriverStatus) {
     const profile = await driversRepository.updateStatus(userId, status);
     if (!profile) throw new AppError(404, 'That user is not registered as a driver', 'NOT_FOUND');
+    return profile;
+  },
+
+  /**
+   * The driver says whether they are working right now. Purely their own column: an
+   * admin changing `status` does not touch it, and vice versa.
+   *
+   * The "needs an active vehicle" rule is not checked here. It spans two modules and
+   * `vehicles` already depends on `drivers`, so `drivers` cannot import `vehicles`; the
+   * controller is the only layer that sees both. See drivers.controller.setOnline.
+   */
+  async setOnline(userId: string, isOnline: boolean) {
+    const profile = await driversRepository.setOnline(userId, isOnline);
+    if (!profile) throw notADriver();
     return profile;
   },
 };

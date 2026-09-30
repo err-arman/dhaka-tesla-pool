@@ -7,14 +7,15 @@ export type AuthStatus = 'loading' | 'authenticated' | 'anonymous'
 export type AuthContextValue = {
   status: AuthStatus
   user: PublicUser | null
-  login: (input: { email: string; password: string }) => Promise<void>
+  /** Resolves with the user the server returned, so callers can route on its role. */
+  login: (input: { email: string; password: string }) => Promise<PublicUser>
   signup: (input: {
     fullName: string
     email: string
     phone?: string
     password: string
     role: Portal
-  }) => Promise<void>
+  }) => Promise<PublicUser>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }

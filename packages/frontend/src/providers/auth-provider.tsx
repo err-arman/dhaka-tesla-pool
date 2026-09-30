@@ -52,12 +52,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokenStore.set(result)
     setUser(result.user)
     setStatus('authenticated')
+    // Returned so the caller can route on the role the server actually granted.
+    // Reading `user` here instead would be stale: setState has not re-rendered yet.
+    return result.user
   }, [])
 
   const login = useCallback(
-    async (input: { email: string; password: string }) => {
-      adopt(await authApi.login(input))
-    },
+    async (input: { email: string; password: string }) =>
+      adopt(await authApi.login(input)),
     [adopt]
   )
 
@@ -68,9 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       phone?: string
       password: string
       role: Portal
-    }) => {
-      adopt(await authApi.signup(input))
-    },
+    }) => adopt(await authApi.signup(input)),
     [adopt]
   )
 

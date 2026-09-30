@@ -173,6 +173,14 @@ export const driversApi = {
   me: () => api<DriverProfile>('/drivers/me'),
 
   apply: () => api<DriverProfile>('/drivers/apply', { method: 'POST' }),
+
+  /**
+   * The driver sets their own availability. Sends the value rather than toggling blind,
+   * so a retried request cannot flip it twice. 409 NO_ACTIVE_VEHICLE when going online
+   * with no vehicle registered.
+   */
+  setOnline: (isOnline: boolean) =>
+    api<DriverProfile>('/drivers/me/online', { method: 'PATCH', body: { isOnline } }),
 }
 
 /**

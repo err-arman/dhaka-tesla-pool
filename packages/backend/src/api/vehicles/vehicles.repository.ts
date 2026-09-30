@@ -26,6 +26,16 @@ export const vehiclesRepository = {
     return row;
   },
 
+  /** Existence only, for a precondition check that treats "none" as normal. */
+  async hasActiveByDriver(driverId: string, ex: DbExecutor = db) {
+    const [row] = await ex
+      .select({ id: vehicles.id })
+      .from(vehicles)
+      .where(and(eq(vehicles.driverId, driverId), eq(vehicles.isActive, true)))
+      .limit(1);
+    return Boolean(row);
+  },
+
   /**
    * Creates the driver's vehicle. The caller is expected to have checked that none
    * is active, so hitting the unique index here is a genuine 409 rather than a

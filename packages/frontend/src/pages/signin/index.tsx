@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/use-auth'
+import { homePathFor, isDriver } from '@/lib/roles'
 import { loginSchema, type LoginInput, type Portal } from '@/lib/schemas'
 import { ApiError } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -41,15 +42,20 @@ export default function LoginPage() {
     setFormError(null)
     try {
       /*
-       * The tab is not an auth decision. The backend has a single /auth/login and
-       * hands back the roles it actually holds, so we send the same request either
-       * way and only choose the landing page from the chosen tab. A passenger who
-       * picks the driver tab still lands on the driver area, where the backend's
-       * guard decides they may not add vehicles.
+       * The tab is not an auth decision. There is one /auth/login and the backend
+       * returns the single role the account holds, so the request is identical either
+       * way and the landing page follows that role, not the tab. A passenger who picks
+       * the Driver tab is told why they landed on the passenger page instead of being
+       * briefly shown the driver portal and bounced.
        */
-      await login(values)
+      const user = await login(values)
+      const driver = isDriver(user.role)
+      navigate(homePathFor(user.role), { replace: true })
+      if (portal === 'driver' && !driver) {
+        toast.info('That account has no driver role, so you are on the passenger page')
+        return
+      }
       toast.success('Signed in')
-      navigate(portal === 'driver' ? '/driver' : '/dashboard', { replace: true })
     } catch (err) {
       // The backend returns one message for a wrong email, a wrong password and a
       // disabled account alike, so there is nothing more specific to show.

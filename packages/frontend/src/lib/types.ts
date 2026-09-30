@@ -13,7 +13,8 @@ export type PublicUser = {
   email: string | null
   phone: string | null
   avatarUrl: string | null
-  roles: Role[]
+  /** Exactly one role per account. Was `roles: Role[]` while the API was many-to-many. */
+  role: Role
 }
 
 /** Mirrors the `driver_status` database enum. */
@@ -22,6 +23,8 @@ export type DriverStatus = 'pending' | 'approved' | 'rejected' | 'suspended'
 export type DriverProfile = {
   userId: string
   status: DriverStatus
+  /** The driver's own choice: are they taking passengers right now. */
+  isOnline: boolean
   createdAt: string
 }
 

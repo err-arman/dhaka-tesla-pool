@@ -14,7 +14,7 @@ export interface PublicUser {
   email: string | null;
   phone: string | null;
   avatarUrl: string | null;
-  roles: Role[];
+  role: Role;
 }
 
 export interface SignupInput {
@@ -33,23 +33,22 @@ export const usersService = {
     return usersRepository.findByEmail(email, ex);
   },
 
-  getRoles(userId: string, ex: DbExecutor = db) {
-    return usersRepository.getRoles(userId, ex);
+  getRole(userId: string, ex: DbExecutor = db) {
+    return usersRepository.findRoleById(userId, ex);
   },
 
   async getPublicUser(userId: string): Promise<PublicUser> {
-    const [user, roles] = await Promise.all([
-      usersRepository.findActivePublicById(userId),
-      usersRepository.getRoles(userId),
-    ]);
+    // Single query: the role rides along on publicUserColumns, so there is no second
+    // round trip and no window where the two halves of the response can disagree.
+    const user = await usersRepository.findActivePublicById(userId);
     if (!user) throw new AppError(404, 'User not found', 'NOT_FOUND');
-    return { ...user, roles };
+    return user;
   },
 
   /**
-   * Inserts the account and grants the chosen role. Takes the role as a parameter
-   * rather than defaulting to 'passenger', so signup can open as a driver; the
-   * narrowing to SelfAssignableRole happens in the signup schema.
+   * Inserts the account with the chosen role. Takes the role as a parameter rather than
+   * defaulting to 'passenger', so signup can open as a driver; the narrowing to
+   * SelfAssignableRole happens in the signup schema.
    *
    * Does not open a transaction: the caller owns it, so signup can add the driver
    * profile to the same one. The unique-violation mapping works either way.
@@ -65,12 +64,11 @@ export const usersService = {
           email: input.email,
           phone: input.phone,
           passwordHash: input.passwordHash,
+          role,
         },
         ex,
       );
       if (!user) throw new AppError(500, 'Could not create the account', 'INTERNAL');
-
-      await usersRepository.addRole(user.id, role, ex);
       return user;
     } catch (err) {
       // Two signups can race past the check above, so the unique index is the real
@@ -83,16 +81,20 @@ export const usersService = {
     }
   },
 
-  addRole(userId: string, role: Role, ex: DbExecutor = db) {
-    return usersRepository.addRole(userId, role, ex);
+  /** Replaces the account's role. Used by driver signup, `apply` and `make-admin`. */
+  async setRole(userId: string, role: Role, ex: DbExecutor = db) {
+    const updated = await usersRepository.setRole(userId, role, ex);
+    if (!updated) throw new AppError(404, 'User not found', 'NOT_FOUND');
+    return updated;
   },
 
   async updateProfile(userId: string, input: UpdateProfileInput): Promise<PublicUser> {
     try {
-      // `updatedAt` has no database trigger, so every update must set it.
+      // `updatedAt` has no database trigger, so every update must set it. The role is
+      // not touched: publicUserColumns carries the current one back out.
       const updated = await usersRepository.update(userId, { ...input, updatedAt: new Date() });
       if (!updated) throw new AppError(404, 'User not found', 'NOT_FOUND');
-      return { ...updated, roles: await usersRepository.getRoles(userId) };
+      return updated;
     } catch (err) {
       if (isUniqueViolation(err)) throw phoneTaken();
       throw err;

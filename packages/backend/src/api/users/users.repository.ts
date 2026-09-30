@@ -1,8 +1,8 @@
-// Drizzle queries for `users` and `user_roles`. No business rules and no HTTP
-// errors live here — services decide what a failed query means.
+// Drizzle queries for `users`. No business rules and no HTTP errors live here —
+// services decide what a failed query means.
 import { and, eq, isNull } from 'drizzle-orm';
 import { db, type DbExecutor } from '../../db';
-import { users, userRoles } from '../../db/schema';
+import { users } from '../../db/schema';
 import type { Role } from '../../common/types/auth.types';
 
 /** The only user columns that may ever be sent to a client. passwordHash is absent. */
@@ -12,6 +12,7 @@ export const publicUserColumns = {
   email: users.email,
   phone: users.phone,
   avatarUrl: users.avatarUrl,
+  role: users.role,
 };
 
 type NewUser = typeof users.$inferInsert;
@@ -39,23 +40,36 @@ export const usersRepository = {
     return row;
   },
 
-  async getRoles(userId: string, ex: DbExecutor = db): Promise<Role[]> {
-    const rows = await ex
-      .select({ role: userRoles.role })
-      .from(userRoles)
-      .where(eq(userRoles.userId, userId));
-    return rows.map((row) => row.role);
+  /**
+   * Reads the role for token signing. Checks `isActive` as well as `deletedAt`, so a
+   * deactivated account cannot have a fresh access token minted from an old refresh
+   * token. No row means the caller decides whether that is a 401.
+   */
+  async findRoleById(id: string, ex: DbExecutor = db) {
+    const [row] = await ex
+      .select({ role: users.role })
+      .from(users)
+      .where(and(eq(users.id, id), isNull(users.deletedAt), eq(users.isActive, true)))
+      .limit(1);
+    return row?.role;
   },
 
   /**
-   * The composite primary key on (user_id, role) is what makes this safe: the
-   * earlier check-then-insert left a window where two concurrent grants both saw
-   * no row and both inserted, giving a user a token with `roles: ['driver','driver']`.
-   * `onConflictDoNothing` keeps it to a single atomic statement and makes a repeat
-   * grant a no-op rather than a 23505.
+   * Replaces the account's role. This is the only way a role changes now that an
+   * account holds exactly one, which is what `POST /drivers/apply` relies on to turn
+   * a passenger into a driver instead of stacking a second role on top.
+   *
+   * The `isNull(deletedAt)` and `isActive` conditions match `update`, so a soft-deleted
+   * or deactivated account cannot have its role escalated while an access token for it
+   * is still inside its TTL.
    */
-  async addRole(userId: string, role: Role, ex: DbExecutor = db) {
-    await ex.insert(userRoles).values({ userId, role }).onConflictDoNothing();
+  async setRole(id: string, role: Role, ex: DbExecutor = db) {
+    const [row] = await ex
+      .update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(and(eq(users.id, id), isNull(users.deletedAt), eq(users.isActive, true)))
+      .returning({ id: users.id });
+    return row;
   },
 
   /**
