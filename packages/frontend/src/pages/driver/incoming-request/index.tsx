@@ -1,23 +1,30 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
-import { rideRequestsApi } from '@/lib/api'
+import { rideRequestsApi } from "@/lib/api";
 import {
   ApiError,
   POOL_ACTION_LABELS,
   POOL_STATUS_LABELS,
+  formatPoisha,
   type CurrentTrip,
   type DriverFeed,
   type PoolOffer,
   type PoolStatus,
-} from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+} from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Poll interval while the driver has this page open, in ms. */
-const POLL_INTERVAL = 10_000
+const POLL_INTERVAL = 10_000;
 
 /**
  * The driver's work: pools waiting to be answered, plus the trip already under way.
@@ -31,13 +38,13 @@ const POLL_INTERVAL = 10_000
  * between a feed that does not look stuck and a phone that is not left hammering the API.
  */
 export default function DriverRequestsPage() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
 
   const feed = useQuery<DriverFeed>({
-    queryKey: ['driver', 'feed'],
+    queryKey: ["driver", "feed"],
     queryFn: rideRequestsApi.driverFeed,
     refetchInterval: POLL_INTERVAL,
-  })
+  });
 
   /*
    * One action button per pool, whose verb comes from the pool's current status. The
@@ -50,14 +57,16 @@ export default function DriverRequestsPage() {
     onSuccess: (_result, variables) => {
       // Both halves change on every transition: the offer leaves the list, the current
       // trip advances, and its passengers' own views are updated server-side.
-      void queryClient.invalidateQueries({ queryKey: ['driver', 'feed'] })
-      toast.success(`Trip ${variables.action}ed`)
+      void queryClient.invalidateQueries({ queryKey: ["driver", "feed"] });
+      toast.success(`Trip ${variables.action}ed`);
     },
     onError: (error) => {
-      toast.error(error instanceof ApiError ? error.message : 'Could not update the trip')
-      void queryClient.invalidateQueries({ queryKey: ['driver', 'feed'] })
+      toast.error(
+        error instanceof ApiError ? error.message : "Could not update the trip",
+      );
+      void queryClient.invalidateQueries({ queryKey: ["driver", "feed"] });
     },
-  })
+  });
 
   if (feed.isLoading) {
     return (
@@ -66,30 +75,34 @@ export default function DriverRequestsPage() {
         <Skeleton className="h-32" />
         <Skeleton className="h-32" />
       </div>
-    )
+    );
   }
 
   if (feed.isError) {
     return (
       <div className="grid gap-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Incoming requests</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Incoming requests
+          </h1>
         </div>
         <p role="alert" className="text-destructive text-sm">
           Could not load your work right now.
         </p>
       </div>
-    )
+    );
   }
 
-  const offers = feed.data?.offers ?? []
-  const trip = feed.data?.currentTrip ?? null
-  const showOffers = offers.length > 0
+  const offers = feed.data?.offers ?? [];
+  const trip = feed.data?.currentTrip ?? null;
+  const showOffers = offers.length > 0;
 
   return (
     <div className="grid gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Incoming requests</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Incoming requests
+        </h1>
         <p className="text-muted-foreground text-sm">
           Requests near your current area, and the trip you are driving.
         </p>
@@ -121,7 +134,7 @@ export default function DriverRequestsPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function OfferRow({
@@ -129,71 +142,120 @@ function OfferRow({
   pending,
   onAct,
 }: {
-  offer: PoolOffer
-  pending: boolean
-  onAct: (action: string) => void
+  offer: PoolOffer;
+  pending: boolean;
+  onAct: (action: string) => void;
 }) {
-  const next = POOL_ACTION_LABELS[offer.status]
+  const next = POOL_ACTION_LABELS[offer.status];
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
       <div className="grid gap-1">
         <span className="font-medium">
-          {offer.pickupName ?? 'Unknown'} to {offer.destinationName ?? 'Unknown'}
+          {offer.pickupName ?? "Unknown"} to{" "}
+          {offer.destinationName ?? "Unknown"}
         </span>
         <span className="text-muted-foreground text-sm">
-          {offer.distanceKm} km away · {offer.passengerCount}{' '}
-          {offer.passengerCount === 1 ? 'passenger' : 'passengers'} ·{' '}
+          {offer.distanceKm} km away · {offer.passengerCount}{" "}
+          {offer.passengerCount === 1 ? "passenger" : "passengers"} ·{" "}
           {offer.currentAvailableSeats} seats left
         </span>
+        <div className="mt-2 grid gap-1 text-sm">
+          {(offer.requests ?? []).map((request) => (
+            <div
+              key={request.id}
+              className="text-muted-foreground flex flex-wrap gap-x-2"
+            >
+              <span className="font-medium text-foreground">
+                {request.passengerName}
+              </span>
+              <span>
+                {request.seatsRequested}{" "}
+                {request.seatsRequested === 1 ? "seat" : "seats"}
+              </span>
+              <span>to {request.destinationName ?? "Unknown"}</span>
+              <span>{formatPoisha(request.fareAmount)}</span>
+            </div>
+          ))}
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <Badge variant="secondary">{POOL_STATUS_LABELS[offer.status]}</Badge>
         {next && (
-          <Button size="sm" disabled={pending} onClick={() => onAct(next.action)}>
-            {pending ? 'Working…' : next.label}
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() => onAct(next.action)}
+          >
+            {pending ? "Working…" : next.label}
           </Button>
         )}
       </div>
     </li>
-  )
+  );
 }
 
 function CurrentTripCard({
   trip,
   act,
 }: {
-  trip: CurrentTrip
-  act: { mutate: (v: { poolId: string; action: string }) => void; isPending: boolean }
+  trip: CurrentTrip;
+  act: {
+    mutate: (v: { poolId: string; action: string }) => void;
+    isPending: boolean;
+  };
 }) {
-  const next = POOL_ACTION_LABELS[trip.status as PoolStatus]
+  const next = POOL_ACTION_LABELS[trip.status as PoolStatus];
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
           <CardTitle>Your current trip</CardTitle>
-          <Badge>{POOL_STATUS_LABELS[trip.status as PoolStatus] ?? trip.status}</Badge>
+          <Badge>
+            {POOL_STATUS_LABELS[trip.status as PoolStatus] ?? trip.status}
+          </Badge>
         </div>
         <CardDescription>
-          {trip.pickupName ?? 'Unknown'} to {trip.destinationName ?? 'Unknown'} ·{' '}
-          {trip.passengers} {trip.passengers === 1 ? 'passenger' : 'passengers'}
+          {trip.pickupName ?? "Unknown"} to {trip.destinationName ?? "Unknown"}{" "}
+          · {trip.passengers}{" "}
+          {trip.passengers === 1 ? "passenger" : "passengers"}
         </CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 grid gap-1 text-sm">
+          {(trip.requests ?? []).map((request) => (
+            <div
+              key={request.id}
+              className="text-muted-foreground flex flex-wrap gap-x-2"
+            >
+              <span className="font-medium text-foreground">
+                {request.passengerName}
+              </span>
+              <span>
+                {request.seatsRequested}{" "}
+                {request.seatsRequested === 1 ? "seat" : "seats"}
+              </span>
+              <span>to {request.destinationName ?? "Unknown"}</span>
+              <span>{formatPoisha(request.fareAmount)}</span>
+            </div>
+          ))}
+        </div>
         {next ? (
           <Button
             disabled={act.isPending}
             onClick={() => act.mutate({ poolId: trip.id, action: next.action })}
           >
-            {act.isPending ? 'Working…' : next.label}
+            {act.isPending ? "Working…" : next.label}
           </Button>
         ) : (
-          <p className="text-muted-foreground text-sm">This trip is finished.</p>
+          <p className="text-muted-foreground text-sm">
+            This trip is finished.
+          </p>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }
 
 function EmptyState() {
@@ -202,10 +264,10 @@ function EmptyState() {
       <div className="grid gap-1">
         <h2 className="text-lg font-semibold">No trips right now</h2>
         <p className="text-muted-foreground text-sm">
-          Go online and choose your current area. Requests that pick up within 3 km of it
-          will appear here.
+          Go online and choose your current area. Requests that pick up within 3
+          km of it will appear here.
         </p>
       </div>
     </div>
-  )
+  );
 }
