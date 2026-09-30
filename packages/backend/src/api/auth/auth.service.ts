@@ -24,9 +24,10 @@ const invalidCredentials = () =>
 
 const invalidRefresh = () => new AppError(401, 'Invalid refresh token', 'UNAUTHORIZED');
 
-/** Creates a session row and returns a fresh token pair. Roles always come from the database. */
+/** Creates a session row and returns a fresh token pair. The role always comes from the database. */
 async function startSession(userId: string, userAgent?: string) {
-  const roles = await usersService.getRoles(userId);
+  const role = await usersService.getRole(userId);
+  if (!role) throw new AppError(401, 'Account is not available', 'UNAUTHORIZED');
   const refreshToken = generateRefreshToken();
   await authRepository.create({
     userId,
@@ -35,7 +36,7 @@ async function startSession(userId: string, userAgent?: string) {
     expiresAt: refreshExpiresAt(),
   });
   return {
-    accessToken: signAccessToken(userId, roles),
+    accessToken: signAccessToken(userId, role),
     refreshToken,
     expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
   };
@@ -98,9 +99,11 @@ export const authService = {
     );
     if (!rotated) throw invalidRefresh();
 
-    const roles = await usersService.getRoles(session.userId);
+    const role = await usersService.getRole(session.userId);
+    // The session row outlives an account that has since been deleted or deactivated.
+    if (!role) throw invalidRefresh();
     return {
-      accessToken: signAccessToken(session.userId, roles),
+      accessToken: signAccessToken(session.userId, role),
       refreshToken: newToken,
       expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
     };

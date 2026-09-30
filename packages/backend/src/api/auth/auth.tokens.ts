@@ -5,9 +5,13 @@ import jwt from 'jsonwebtoken';
 import { env } from '../../config/env';
 import type { Role } from '../../common/types/auth.types';
 
-/** Short-lived JWT. The user id goes in the standard `sub` claim. */
-export function signAccessToken(userId: string, roles: Role[]): string {
-  return jwt.sign({ roles }, env.JWT_ACCESS_SECRET, {
+/**
+ * Short-lived JWT. The user id goes in the standard `sub` claim and the single role
+ * in `role`. This replaced a `roles: Role[]` claim; tokens minted by the old shape no
+ * longer pass the payload schema in `authenticate`, so everyone re-logs-in once.
+ */
+export function signAccessToken(userId: string, role: Role): string {
+  return jwt.sign({ role }, env.JWT_ACCESS_SECRET, {
     subject: userId,
     algorithm: 'HS256',
     expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,

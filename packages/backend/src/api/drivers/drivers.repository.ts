@@ -8,6 +8,7 @@ import type { DriverStatus } from '../../common/types/auth.types';
 const profileColumns = {
   userId: driverProfiles.userId,
   status: driverProfiles.status,
+  isOnline: driverProfiles.isOnline,
   createdAt: driverProfiles.createdAt,
 };
 
@@ -39,6 +40,15 @@ export const driversRepository = {
     const [row] = await ex
       .update(driverProfiles)
       .set({ status })
+      .where(eq(driverProfiles.userId, userId))
+      .returning(profileColumns);
+    return row;
+  },
+
+  async setOnline(userId: string, isOnline: boolean, ex: DbExecutor = db) {
+    const [row] = await ex
+      .update(driverProfiles)
+      .set({ isOnline })
       .where(eq(driverProfiles.userId, userId))
       .returning(profileColumns);
     return row;

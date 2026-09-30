@@ -32,7 +32,7 @@ export function DeleteAccount() {
     onSuccess: async () => {
       await logout()
       toast.success('Account deleted')
-      navigate('/login', { replace: true })
+      navigate('/signin', { replace: true })
     },
     onError: (err) => {
       toast.error(err instanceof ApiError ? err.message : 'Could not delete the account')

@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/use-auth'
+import { homePathFor } from '@/lib/roles'
 import { signupSchema, type Portal, type SignupInput } from '@/lib/schemas'
 import { ApiError } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -53,7 +54,7 @@ export default function SignupPage() {
     setFormError(null)
     try {
       // The backend treats an empty phone as absent, so send undefined, not ''.
-      await signup({
+      const user = await signup({
         fullName: values.fullName,
         email: values.email,
         phone: values.phone || undefined,
@@ -61,8 +62,10 @@ export default function SignupPage() {
         role: values.role,
       })
       toast.success('Account created')
-      // A driver can register a vehicle right away, so send them straight there.
-      navigate(values.role === 'driver' ? '/driver' : '/dashboard', { replace: true })
+      // The granted role decides the landing page, not the tab: the server is the only
+      // thing that knows what was actually granted. A driver can register a vehicle
+      // straight away, so they go to the driver portal.
+      navigate(homePathFor(user.role), { replace: true })
     } catch (err) {
       if (err instanceof ApiError) {
         setFormError(err.message)
@@ -208,7 +211,7 @@ export default function SignupPage() {
 
           <p className="text-muted-foreground mt-4 text-center text-sm">
             Already have an account?{' '}
-            <Link to="/login" className="text-primary underline-offset-4 hover:underline">
+            <Link to="/signin" className="text-primary underline-offset-4 hover:underline">
               Sign in
             </Link>
           </p>

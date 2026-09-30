@@ -11,4 +11,6 @@ driversRouter.use(authenticate);
 
 driversRouter.post('/apply', driversController.apply);
 driversRouter.get('/me', driversController.getMe);
+// Before `/:userId/status`: the literal path has to win over the parameter.
+driversRouter.patch('/me/online', driversController.setOnline);
 driversRouter.patch('/:userId/status', requireRole('admin'), driversController.updateStatus);

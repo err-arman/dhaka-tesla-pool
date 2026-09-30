@@ -1,18 +1,18 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 
 import { AuthProvider } from '@/providers/auth-provider'
 import {
+  HomeRedirect,
   RedirectIfAuthenticated,
   RequireAuth,
+  RequireDriver,
 } from '@/hooks/use-guarded-route'
-import { DriverLayout } from '@/components/driver-layout'
-import LoginPage from '@/pages/login'
+import SigninPage from '@/pages/signin'
 import SignupPage from '@/pages/signup'
-import DashboardPage from '@/pages/dashboard'
-import DriverDashboardPage from '@/pages/driver-dashboard'
-import DriverVehiclePage from '@/pages/driver-vehicle'
+import PassengerPage from '@/pages/passenger'
+import DriverPage from '@/pages/driver'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,10 +32,10 @@ export default function App() {
         <AuthProvider>
           <Routes>
             <Route
-              path="/login"
+              path="/signin"
               element={
                 <RedirectIfAuthenticated>
-                  <LoginPage />
+                  <SigninPage />
                 </RedirectIfAuthenticated>
               }
             />
@@ -47,29 +47,30 @@ export default function App() {
                 </RedirectIfAuthenticated>
               }
             />
+
+            {/* Post-auth landing pages. Still placeholders. */}
             <Route
-              path="/dashboard"
+              path="/passenger"
               element={
                 <RequireAuth>
-                  <DashboardPage />
+                  <PassengerPage />
                 </RequireAuth>
               }
             />
-
-            {/* The driver area is its own shell: sidebar, header and nested routes. */}
             <Route
               path="/driver"
               element={
                 <RequireAuth>
-                  <DriverLayout />
+                  <RequireDriver>
+                    <DriverPage />
+                  </RequireDriver>
                 </RequireAuth>
               }
-            >
-              <Route index element={<DriverDashboardPage />} />
-              <Route path="vehicle" element={<DriverVehiclePage />} />
-            </Route>
+            />
 
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            {/* `/` and anything unmatched land by role, not on a fixed page. */}
+            <Route path="/" element={<HomeRedirect />} />
+            <Route path="*" element={<HomeRedirect />} />
           </Routes>
           <Toaster richColors position="top-center" />
         </AuthProvider>

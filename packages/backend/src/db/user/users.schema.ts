@@ -14,6 +14,9 @@ export const users = pgTable('users', {
   phone: text('phone').unique(),               // store in E.164, e.g. +8801XXXXXXXXX
   passwordHash: text('password_hash'),         // nullable if you allow OTP/social only
   avatarUrl: text('avatar_url'),
+  // Exactly one role per account. This was a many-to-many `user_roles` join table;
+  // the column makes "one role" a database constraint instead of a convention.
+  role: roleEnum('role').notNull().default('passenger'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

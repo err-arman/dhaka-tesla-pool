@@ -17,5 +17,5 @@ export type SelfAssignableRole = Exclude<Role, 'admin'>;
 /** The identity attached to a request after a token is verified. */
 export interface AuthUser {
   id: string;
-  roles: Role[];
+  role: Role;
 }

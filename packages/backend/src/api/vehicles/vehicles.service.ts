@@ -76,4 +76,13 @@ export const vehiclesService = {
     if (!vehicle) throw noVehicle();
     return vehicle;
   },
+
+  /**
+   * A yes/no answer for callers that treat "no vehicle" as a normal state rather than
+   * an error. `get` throws the 404, which is right for the endpoint but wrong for a
+   * cross-module precondition check.
+   */
+  async hasActive(driverId: string) {
+    return vehiclesRepository.hasActiveByDriver(driverId);
+  },
 };

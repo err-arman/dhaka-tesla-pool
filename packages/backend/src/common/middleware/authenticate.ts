@@ -10,10 +10,12 @@ import { AppError } from '../errors/app-error';
 import type { AuthUser } from '../types/auth.types';
 
 // Never trust the shape of a decoded token blindly: it may be signed with a
-// different key from an older deployment, or hand-crafted.
+// different key from an older deployment, or hand-crafted. The schema takes a single
+// `role`, so a token carrying the old `roles: [...]` array is rejected outright —
+// that is the intended one-time re-login.
 const payloadSchema = z.object({
   sub: z.string(),
-  roles: z.array(z.enum(roleEnum.enumValues)),
+  role: z.enum(roleEnum.enumValues),
 });
 
 export const authenticate: RequestHandler = (req, _res, next) => {
@@ -36,7 +38,7 @@ export const authenticate: RequestHandler = (req, _res, next) => {
   const payload = payloadSchema.safeParse(decoded);
   if (!payload.success) throw new AppError(401, 'Invalid access token', 'UNAUTHORIZED');
 
-  req.user = { id: payload.data.sub, roles: payload.data.roles };
+  req.user = { id: payload.data.sub, role: payload.data.role };
   next();
 };
 
