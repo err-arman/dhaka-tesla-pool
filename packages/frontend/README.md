@@ -47,20 +47,19 @@ falling back to 5174 will be blocked by CORS.
 
 | Route        | Access                                                     |
 | ------------ | ---------------------------------------------------------- |
-| `/signin`    | public, redirects to the role's own page when signed in    |
-| `/signup`    | public, redirects when signed in; sends the chosen role     |
-| `/`          | lands on `/driver` or `/passenger` by the user's own role  |
-| `/passenger` | requires a session; the landing page for non-drivers        |
-| `/driver`    | requires a session **and** the `driver` role                |
+| `/signin`    | public, redirects to the role's own page when signed in     |
+| `/signup`    | public, redirects when signed in; sends the chosen role      |
+| `/`          | lands on `/driver` or `/passenger` by the user's own role   |
+| `/passenger` | requires a session; the landing page for non-drivers         |
+| `/driver/*`  | requires a session **and** the `driver` role                 |
 
 Landing and gating both come from the role the server returned, not from UI state.
 `lib/roles.ts` holds the two helpers: `isDriver(role)` and `homePathFor(role)`.
 
-`/passenger` and `/driver` are placeholders for now, so `/signin` and `/signup` are the
-only built screens. The driver components (`driver-layout`, `vehicle-card`,
-`driver-status-card`, `driver-online-toggle`, `apply-to-drive`) and the account
-components (`profile-form`, `delete-account`) still exist but nothing imports them yet.
-They are left in place deliberately and are not in the bundle.
+`/passenger` is still a placeholder, so `/signin` and `/signup` are the only fully built
+passenger-side screens. The whole driver area is built out; see Driver area below. The
+one component left unimported is `apply-to-drive`, which belongs on `/passenger` and is
+waiting for that page to be built.
 
 ## Structure
 
@@ -69,7 +68,8 @@ src/
   components/ui/   shadcn primitives (button, card, form, input, label, separator)
   hooks/           useAuth, route guards
   lib/             api client, zod schemas, types, roles, cn()
-  pages/           signin, signup, passenger, driver
+  pages/driver/    index (redirect), dashboard, vechile, incoming-request, settings
+  pages/           signin, signup, passenger
   providers/       auth context and provider
 ```
 
@@ -118,18 +118,42 @@ ordering.
 An `admin` is not a driver, so `homePathFor('admin')` returns `/passenger`. Admins have no
 portal of their own yet.
 
-- `/driver` — driver status, availability and your vehicle
-- `/driver/vehicle` — register, edit seats, or remove
+### Driver area
 
-Those two pages are the intended shape of the driver area. Right now only `/driver`
-exists and it renders a placeholder, because the pages were being rebuilt and the
-vehicle components are parked. See the note under Routes.
+`DriverLayout` is the shell: a fixed left sidebar, a header, and an `<Outlet />`. It
+renders only for a driver, because `RequireDriver` wraps the whole route. The four nav
+items, in order:
+
+| Route                     | Page                     | Shows                                        |
+| ------------------------- | ------------------------ | -------------------------------------------- |
+| `/driver/dashboard`       | `DriverDashboardPage`    | availability, vehicle status, approval status |
+| `/driver/vechile`         | `DriverVehiclePage`      | register, edit seats, or remove the vehicle  |
+| `/driver/incoming-request`| `DriverRequestsPage`     | placeholder, no backend yet                  |
+| `/driver/settings`        | `DriverSettingsPage`     | profile edit and delete account              |
+
+`/driver` is the layout, not a page, so it redirects to `/driver/dashboard`. That keeps
+the dashboard at one address instead of also answering to the parent, and it is where
+`homePathFor` sends a driver who has just signed in.
+
+On the dashboard the order is deliberate: **availability first**, because whether the
+driver is currently taking passengers is the one thing they open the page to find. Then
+the vehicle summary, then the approval status. `DriverOnlineToggle` and
+`DriverVehicleSummary` both read the same query keys the dedicated pages use
+(`['driver','me']` and `['vehicle']`), so the dashboard and the vehicle page render from
+one cache entry and registering a vehicle on either updates both.
+
+`Incoming requests` is an honest placeholder. Rides, fares and payments do not exist
+yet, so there is no endpoint to list requests from and nothing to accept or reject; the
+page says so rather than rendering invented rows.
+
+The sidebar is `hidden md:flex`, so below `md` the nav moves into a scrollable header row
+— four labels do not fit a phone, and the row scrolls sideways rather than wrapping the
+header onto a second line.
 
 A passenger signs up as a passenger and becomes a driver later with the Apply button
 (`POST /drivers/apply`) in `ApplyToDrive`, which is rendered on `/passenger` rather than
-in the driver area for exactly the gating reason above. Applying adds the role and the
-profile in one transaction and refetches the user, so the next visit to `/` lands on
-`/driver`.
+in the driver area for exactly the gating reason above. Applying **replaces** the role in
+one transaction and refetches the user, so the next visit to `/` lands on `/driver`.
 
 A driver has at most one active vehicle, so `VehicleCard` renders a single vehicle
 rather than a list. A `404` from `GET /vehicles` means "not registered yet" and

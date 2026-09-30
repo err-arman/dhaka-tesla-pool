@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { useAuth } from '@/hooks/use-auth'
@@ -8,17 +7,24 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
+/*
+ * None of these is a prefix of another, so NavLink needs no `end` prop. `/driver` itself
+ * is not in the list because it redirects to the dashboard.
+ */
 const nav = [
-  { to: '/driver', label: 'Dashboard', end: true },
-  { to: '/driver/vehicle', label: 'Vehicle' },
+  { to: '/driver/dashboard', label: 'Dashboard' },
+  { to: '/driver/vechile', label: 'Vehicle' },
+  { to: '/driver/incoming-request', label: 'Incoming requests' },
+  { to: '/driver/settings', label: 'Settings' },
 ]
 
 export function DriverLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const [signingOut, setSigningOut] = useState(false)
 
+  // `logout` clears the query cache itself in endSession(), so there is nothing to
+  // invalidate here.
   const signOut = async () => {
     setSigningOut(true)
     try {
@@ -47,7 +53,6 @@ export function DriverLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.end}
               className={({ isActive }) =>
                 cn(
                   'rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -70,15 +75,16 @@ export function DriverLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4 md:px-6">
-          <nav className="flex items-center gap-1 md:hidden">
+          {/* Four items do not fit a phone, so this row scrolls sideways instead of
+              wrapping the header onto a second line. */}
+          <nav className="-mx-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 md:hidden">
             {nav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-md px-2.5 py-1.5 text-sm font-medium',
+                    'shrink-0 rounded-md px-2.5 py-1.5 text-sm font-medium',
                     isActive ? 'bg-secondary text-secondary-foreground' : 'text-muted-foreground'
                   )
                 }
@@ -88,19 +94,15 @@ export function DriverLayout() {
             ))}
           </nav>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             <Badge variant="secondary">Driver</Badge>
             <Button
               variant="outline"
               size="sm"
               disabled={signingOut}
-              onClick={async () => {
-                // The driver list is cached, so drop it along with the session.
-                queryClient.clear()
-                await signOut()
-              }}
+              onClick={signOut}
             >
-              Sign out
+              {signingOut ? 'Signing out…' : 'Sign out'}
             </Button>
           </div>
         </header>
