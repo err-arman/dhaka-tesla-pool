@@ -11,7 +11,9 @@
     "db:migrate": "npx drizzle-kit migrate",
     "db:studio": "npx drizzle-kit studio",
     "db:seed:locations": "bun src/seeds/locations.seed.ts",
-    "make-admin": "bun src/scripts/make-admin.ts"
+    "make-admin": "bun src/scripts/make-admin.ts",
+    "test:rides": "bun test/rides.e2e.ts",
+    "test:rides:http": "bun test/rides.http.e2e.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

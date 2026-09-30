@@ -1,7 +1,8 @@
 # Tesla Pool — frontend
 
-Vite + React 19 + TypeScript, with shadcn/ui on Tailwind v4. Currently covers the
-auth flow: signup, login, session persistence, and sign-out.
+Vite + React 19 + TypeScript, with shadcn/ui on Tailwind v4. Covers the auth flow
+(signup, login, session persistence, sign-out) and the shared-ride flow: booking a ride,
+matching it to an online driver, and driving a trip through to completion.
 
 ## Setup
 
@@ -129,7 +130,7 @@ items, in order:
 | ------------------------- | ------------------------ | -------------------------------------------- |
 | `/driver/dashboard`       | `DriverDashboardPage`    | availability, vehicle status, approval status |
 | `/driver/vechile`         | `DriverVehiclePage`      | register, edit seats, or remove the vehicle  |
-| `/driver/incoming-request`| `DriverRequestsPage`     | placeholder, no backend yet                  |
+| `/driver/incoming-request`| `DriverRequestsPage`     | nearby offers and the current trip, with the lifecycle actions |
 | `/driver/settings`        | `DriverSettingsPage`     | profile edit and delete account              |
 
 `/driver` is the layout, not a page, so it redirects to `/driver/dashboard`. That keeps
@@ -143,9 +144,22 @@ the vehicle summary, then the approval status. `DriverOnlineToggle` and
 (`['driver','me']` and `['vehicle']`), so the dashboard and the vehicle page render from
 one cache entry and registering a vehicle on either updates both.
 
-`Incoming requests` is an honest placeholder. Rides, fares and payments do not exist
-yet, so there is no endpoint to list requests from and nothing to accept or reject; the
-page says so rather than rendering invented rows.
+`Incoming requests` polls `GET /ride-requests/driver/feed` every 10 seconds and renders
+two things: the driver's **current trip** and nearby **offers**. An offer is a `matched`
+pool on someone else's vehicle within 3 km of the driver's current area, which is why
+going online asks for an area first — `DriverOnlineToggle` will not flip to online without
+one, and going offline clears it.
+
+Which action buttons appear is derived from the pool's status rather than stored in
+state, so a stale page cannot offer an action that is no longer legal: `Accept` on
+`matched`, then `Arrived` / `Start` / `Complete` as the trip progresses. The backend
+re-checks every transition and answers `409 ILLEGAL_POOL_TRANSITION` regardless, and the
+404 it returns for another driver's pool means "not yours" without confirming the pool
+exists. A driver's own pool is never shown back to them as an offer.
+
+Every action invalidates the feed query, so the driver sees the result of their own tap
+without waiting for the next poll. Polling exists because the changes that matter are
+made on *other* people's devices and there is no socket to push them.
 
 The sidebar is `hidden md:flex`, so below `md` the nav moves into a scrollable header row
 — four labels do not fit a phone, and the row scrolls sideways rather than wrapping the
@@ -160,7 +174,7 @@ items. Two nav items:
 | Route                  | Page                    | Shows                                     |
 | ---------------------- | ----------------------- | ----------------------------------------- |
 | `/passenger/profile`   | `PassengerProfilePage`  | read-only summary, edit form, apply, delete |
-| `/passenger/request`   | `PassengerRequestPage`  | placeholder, no backend yet               |
+| `/passenger/request`   | `PassengerRequestPage`  | booking form and this passenger's request history |
 
 `/passenger` is the layout, not a page, so it redirects to `/passenger/profile`, and it
 is where `homePathFor` sends a passenger — and an `admin`, who is not a driver.
@@ -210,21 +224,79 @@ user already lands:
 - `DriverOnlineToggle` is the driver's own availability switch, kept separate from the
   admin-controlled approval `status`: approval is "may this person drive", online is
   "are they working now". The button is disabled when the account is not approved, so
-  the reason shows before the click rather than after. Going online with no vehicle is
-  left to the server, which answers `409 NO_ACTIVE_VEHICLE`; the toggle shows that
-  message verbatim.
+  the reason shows before the click rather than after. Going online requires both an
+  active vehicle and a **current area**, because the area is what matching measures the
+  driver against: `currentZoneId` is required to go online and is cleared on going
+  offline, so an offline driver is never treated as being somewhere. The area is chosen
+  in a select rather than typed, since it comes from `GET /locations`. Going online with
+  no vehicle is left to the server, which answers `409 NO_ACTIVE_VEHICLE`; the toggle
+  shows that message verbatim.
 - `VehicleCard` uses **PUT** to register and **PATCH** to change seats, with a
   `mode` prop choosing the verb and the schema. PATCH requires a value because the
   backend refuses an empty body; PUT allows an empty one so the server can apply its
   column default.
 
+## The ride flow
+
+The passenger page is a booking form plus this passenger's history, and it polls
+`GET /ride-requests/mine` every 10 seconds because a driver accepting a pool is a change
+on another device. Pickup, destination and seats all come from `GET /locations`, so a
+request can never be invalid for want of a map.
+
+Two details on that page are easy to get wrong:
+
+- **No fare is shown until the request is matched.** A fresh request comes back with
+  `fareAmount: 0`, which is not a price of zero — it is "not priced yet", because the
+  fare depends on who else ends up sharing the ride. Rendering it as ৳0 would be a lie,
+  so the list says "Fare pending" until matching sets it.
+- **The form is disabled while a trip is live.** A passenger may hold one request at a
+  time while it is `requested`, `matched` or `in_progress`; the backend enforces it with
+  a partial unique index and answers `409 RIDE_ALREADY_IN_PROGRESS`. `liveRequest` is
+  derived from the same polled list the page renders, not from a second request, so the
+  notice and the list cannot disagree and it clears itself on the next poll once the trip
+  completes. The rule is surfaced here so the passenger finds out before filling in a
+  form, rather than after submitting it. Once the trip is `completed` or `cancelled` the
+  button comes back on its own — the passenger can book again.
+
+`LIVE_RIDE_REQUEST_STATUSES` in `lib/types.ts` mirrors the backend's index predicate. If
+one side changes the other has to follow, or the UI will enable a button the server
+refuses.
+
+### Cancelling
+
+Each request in the history carries a **Cancel request** button, but only while the server
+would accept it — `requested` and `matched`. `in_progress` gets no button: the car has
+moved, the passenger is in it, and the driver owns what happens next. The status is
+re-checked server-side regardless, so a stale page gets a 409 rather than a wrong outcome.
+
+It is two-step rather than a dialog, because the project has no dialog primitive and adding
+`@radix-ui/react-dialog` for one button is not worth a dependency — the same reasoning
+`DeleteAccount` uses for its typed confirmation, one step lighter. `confirmingId` holds the
+single row awaiting confirmation, so the Confirm/Keep buttons replace the cancel button
+instead of stacking beside it.
+
+`onSuccess` **invalidates** the `['ride-requests','mine']` query instead of patching the
+returned status into the list. The server only returns the new status, but cancelling
+changes more than that: the seat went back, the pool may have been cancelled, and anyone
+left sharing it was re-priced. Refetching keeps the row consistent with the rest of the
+list rather than showing a stale fare next to a cancelled badge.
+
+A cancelled request keeps the fare it was quoted, and the list still renders it — it is a
+record of what the trip would have cost, not a price of zero. Once cancelled, the
+one-live-request rule no longer blocks the passenger, so the form's disabled state clears
+on the next poll without a page reload.
+
 ## Not built yet
 
-Ride requests. Both the passenger `/passenger/request` page and the driver
-`/driver/incoming-request` twin are placeholders, and they are placeholders in the same
-way: there is no ride, dispatch or payment domain in the backend at all, so there is
-nothing to list, send, accept or price. Both pages say so instead of rendering invented
-rows.
+Payments. Fares are computed and stored as integer poisha and shown, but nothing charges
+anything — there is no payment method, gateway or transaction table.
+
+Driver-side cancellation. A passenger can cancel their own booking, but a driver cannot
+cancel a trip. Abandoning passengers who are already in the car needs a rule about where
+they go and whether they are refunded, so there is no driver action for it and the driver
+feed has no cancel button.
+
+Password reset and email verification stay as they were: no routes, tables or tokens.
 
 Password reset, email verification and change-password. There are no routes, tables
 or tokens for any of them, so a user who forgets their password is locked out.

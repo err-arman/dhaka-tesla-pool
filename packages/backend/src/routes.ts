@@ -2,6 +2,8 @@
 import { Router } from 'express';
 import { authRouter } from './api/auth/auth.routes';
 import { driversRouter } from './api/drivers/drivers.routes';
+import { locationsRouter } from './api/locations/locations.routes';
+import { rideRequestsRouter } from './api/ride-requests/ride-requests.routes';
 import { usersRouter } from './api/users/users.routes';
 import { vehiclesRouter } from './api/vehicles/vehicles.routes';
 
@@ -15,3 +17,5 @@ routes.use('/auth', authRouter);
 routes.use('/users', usersRouter);
 routes.use('/drivers', driversRouter);
 routes.use('/vehicles', vehiclesRouter);
+routes.use('/locations', locationsRouter);
+routes.use('/ride-requests', rideRequestsRouter);

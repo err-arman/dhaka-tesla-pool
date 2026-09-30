@@ -1,0 +1,14 @@
+-- Only this statement is new.
+--
+-- `drizzle-kit generate` emitted the whole schema diff again because there is no
+-- `drizzle/meta/_journal.json` in this repo, so it cannot find the head of the migration
+-- chain and treats every run as a fresh init. Everything below the separator is already
+-- applied by `20260930122653_online_driver_zones_and_pool_anchor`; re-running it would
+-- fail on `ADD COLUMN` and re-drop the enum. So this file is trimmed to the one change
+-- this migration owns.
+--
+-- Safe to apply only because no passenger currently has more than one live request --
+-- verified before running. If that changes, this statement fails and the duplicates have
+-- to be resolved first, which is the correct outcome: it is a data problem, not a
+-- schema one.
+CREATE UNIQUE INDEX "ride_requests_one_live_per_passenger" ON "ride_requests" ("passenger_id") WHERE "status" in ('requested', 'matched', 'in_progress');

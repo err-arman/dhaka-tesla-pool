@@ -1,17 +1,7 @@
-// Zod schemas for the auth endpoints. Self-contained on purpose: a validation file
-// may only depend on zod, so it does not reuse the field rules in users.validation.
-import { z } from 'zod';
-import type { SelfAssignableRole } from '../../common/types/auth.types';
-
-// Stored lowercased so uniqueness comparisons are reliable.
-const email = z.string().trim().toLowerCase().pipe(z.email());
-
-// E.164, e.g. +8801XXXXXXXXX. Enforced here as well as on update, so a signup
-// cannot store a phone that a later profile update would reject.
-const phone = z
-  .string()
-  .trim()
-  .regex(/^\+[1-9]\d{7,14}$/, 'Use international format, e.g. +8801XXXXXXXXX');
+// Zod schemas for the auth endpoints. Shared field rules live in common/validation.
+import { z } from "zod";
+import type { SelfAssignableRole } from "../../common/types/auth.types";
+import { email, phone, fullName } from "../../common/validation/fields";
 
 /*
  * The roles a client may pick for itself. `admin` is absent on purpose: signup takes
@@ -24,14 +14,17 @@ const phone = z
  * self-assignable. Keeping the array as the schema's source means the check cannot
  * drift away from what is actually accepted.
  */
-const selfAssignableRoles = ['passenger', 'driver'] as const satisfies readonly SelfAssignableRole[];
+const selfAssignableRoles = [
+  "passenger",
+  "driver",
+] as const satisfies readonly SelfAssignableRole[];
 
 export const signupSchema = z.object({
-  fullName: z.string().trim().min(2).max(100),
+  fullName,
   email,
   phone: phone.optional(),
   password: z.string().min(8).max(128),
-  role: z.enum(selfAssignableRoles).default('passenger'),
+  role: z.enum(selfAssignableRoles).default("passenger"),
 });
 
 export const loginSchema = z.object({

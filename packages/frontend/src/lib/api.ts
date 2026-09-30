@@ -3,11 +3,15 @@ import {
   tokenStore,
   type ApiErrorBody,
   type AuthResult,
+  type DriverFeed,
   type DriverProfile,
+  type Location,
+  type PoolAction,
   type PublicUser,
+  type RideRequest,
   type Vehicle,
 } from './types'
-import type { Portal } from './schemas'
+import type { Portal, RideRequestInput } from './schemas'
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'
 
@@ -178,9 +182,16 @@ export const driversApi = {
    * The driver sets their own availability. Sends the value rather than toggling blind,
    * so a retried request cannot flip it twice. 409 NO_ACTIVE_VEHICLE when going online
    * with no vehicle registered.
+   *
+   * `currentZoneId` is required to go online and ignored to go offline. The server clears
+   * the zone when a driver goes offline, so a stale area cannot keep offering them work
+   * after they have stopped.
    */
-  setOnline: (isOnline: boolean) =>
-    api<DriverProfile>('/drivers/me/online', { method: 'PATCH', body: { isOnline } }),
+  setOnline: (isOnline: boolean, currentZoneId?: string | null) =>
+    api<DriverProfile>('/drivers/me/online', {
+      method: 'PATCH',
+      body: { isOnline, currentZoneId: currentZoneId ?? null },
+    }),
 }
 
 /**
@@ -196,4 +207,47 @@ export const vehiclesApi = {
   patch: (input: { seats: number }) => api<Vehicle>('/vehicles', { method: 'PATCH', body: input }),
   /** Soft delete: the row stays with isActive false, so a new one can be added. */
   remove: () => api<void>('/vehicles', { method: 'DELETE' }),
+}
+
+/**
+ * The curated area list, read-only and the same for all three roles. An empty array is a
+ * normal answer, not a failure: it means the seed has not been run yet.
+ */
+export const locationsApi = {
+  list: () => api<Location[]>('/locations'),
+}
+
+/**
+ * Ride requests.
+ *
+ * `create` returns the stored row rather than a booking confirmation: at submission time
+ * the request is `requested`, unpriced, and unmatched. The response carries the area
+ * names so the UI can show "Banali -> Mohakhali" without a second locations fetch.
+ */
+export const rideRequestsApi = {
+  create: (input: RideRequestInput) =>
+    api<RideRequest>('/ride-requests', { method: 'POST', body: input }),
+  /** Scoped to the signed-in passenger on the server; no id is sent. */
+  mine: () => api<RideRequest[]>('/ride-requests/mine'),
+  /** Offers plus the driver's current trip, both derived server-side. */
+  driverFeed: () => api<DriverFeed>('/ride-requests/driver/feed'),
+  /**
+   * The passenger drops their own booking. A command on a verb, not a DELETE: nothing is
+   * deleted -- the row stays as `cancelled` history and keeps the pool it was matched
+   * into -- and the server answers 409 once the trip has started, which is not something
+   * the client can know on its own because the driver started it on another device.
+   */
+  cancel: (requestId: string) =>
+    api<{ id: string; status: 'cancelled' }>(`/ride-requests/${requestId}/cancel`, {
+      method: 'POST',
+    }),
+  /**
+   * The driver's next step: accept, arrive, start or complete. A command rather than a
+   * patch -- there is no body, and the server rejects a move that is not legal from the
+   * pool's current state with 409 rather than silently repeating it.
+   */
+  poolAction: (poolId: string, action: PoolAction) =>
+    api<{ id: string; status: string }>(`/ride-requests/pools/${poolId}/${action}`, {
+      method: 'POST',
+    }),
 }
