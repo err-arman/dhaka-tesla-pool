@@ -9,10 +9,15 @@ import {
   RequireAuth,
   RequireDriver,
 } from '@/hooks/use-guarded-route'
+import { DriverLayout } from '@/components/driver-layout'
 import SigninPage from '@/pages/signin'
 import SignupPage from '@/pages/signup'
 import PassengerPage from '@/pages/passenger'
-import DriverPage from '@/pages/driver'
+import DriverIndexPage from '@/pages/driver'
+import DriverDashboardPage from '@/pages/driver/dashboard'
+import DriverVehiclePage from '@/pages/driver/vechile'
+import DriverRequestsPage from '@/pages/driver/incoming-request'
+import DriverSettingsPage from '@/pages/driver/settings'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,16 +62,23 @@ export default function App() {
                 </RequireAuth>
               }
             />
+            {/* The driver area is its own shell: sidebar, header and nested routes. */}
             <Route
               path="/driver"
               element={
                 <RequireAuth>
                   <RequireDriver>
-                    <DriverPage />
+                    <DriverLayout />
                   </RequireDriver>
                 </RequireAuth>
               }
-            />
+            >
+              <Route index element={<DriverIndexPage />} />
+              <Route path="dashboard" element={<DriverDashboardPage />} />
+              <Route path="vechile" element={<DriverVehiclePage />} />
+              <Route path="incoming-request" element={<DriverRequestsPage />} />
+              <Route path="settings" element={<DriverSettingsPage />} />
+            </Route>
 
             {/* `/` and anything unmatched land by role, not on a fixed page. */}
             <Route path="/" element={<HomeRedirect />} />
