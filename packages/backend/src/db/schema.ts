@@ -3,3 +3,6 @@ export * from './user/users.schema';
 export * from './auth/auth.schema';
 export * from './driver/driver.schema';
 export * from './vehicles/vehicles.schema';
+export * from './locations/locations.schema';
+export * from './pool/pool.schema';
+export * from './ride_request/ride_request.schema';

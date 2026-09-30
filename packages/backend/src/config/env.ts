@@ -1,4 +1,22 @@
+import { config } from "dotenv";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
+
+/*
+ * Loaded here, from the module every other module already imports, rather than relying
+ * on a bare `bun` invocation.
+ *
+ * Bun loads `.env` from `process.cwd()`, so a script run from a subdirectory — `bun run
+ * locations.seed.ts` from `src/seeds` — sees no variables at all and dies in the
+ * validation below with `DATABASE_URL: expected string, received undefined`. Anchoring
+ * the path to this file makes every entrypoint work from any directory.
+ *
+ * Two details: `quiet` silences dotenv's startup banner, which would otherwise appear in
+ * the middle of a script's own output; and dotenv never overwrites a variable that is
+ * already set, so a real environment (Docker, CI, an exported shell var) still wins over
+ * the file.
+ */
+config({ path: fileURLToPath(new URL("../../.env", import.meta.url)), quiet: true });
 
 const schema = z.object({
   NODE_ENV: z
