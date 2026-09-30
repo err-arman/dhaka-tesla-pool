@@ -1,18 +1,17 @@
 // HTTP layer for /drivers.
-import type { Request, Response } from 'express';
-import { requireUser } from '../../common/middleware/authenticate';
-import { AppError } from '../../common/errors/app-error';
-import { vehiclesService } from '../vehicles/vehicles.service';
-import { locationsRepository } from '../locations/locations.repository';
-import { driversService } from './drivers.service';
-import { driverParamsSchema, setOnlineSchema, updateStatusSchema } from './drivers.validation';
+import type { Request, Response } from "express";
+import { requireUser } from "../../common/middleware/authenticate";
+import { AppError } from "../../common/errors/app-error";
+import { vehiclesService } from "../vehicles/vehicles.service";
+import { locationsRepository } from "../locations/locations.repository";
+import { driversService } from "./drivers.service";
+import {
+  driverParamsSchema,
+  setOnlineSchema,
+  updateStatusSchema,
+} from "./drivers.validation";
 
 export const driversController = {
-  async apply(req: Request, res: Response) {
-    const user = requireUser(req);
-    res.status(201).json(await driversService.apply(user.id));
-  },
-
   async getMe(req: Request, res: Response) {
     const user = requireUser(req);
     res.json(await driversService.getProfile(user.id));
@@ -30,8 +29,8 @@ export const driversController = {
     if (isOnline && !(await vehiclesService.hasActive(user.id))) {
       throw new AppError(
         409,
-        'Register an active vehicle before going online',
-        'NO_ACTIVE_VEHICLE',
+        "Register an active vehicle before going online",
+        "NO_ACTIVE_VEHICLE",
       );
     }
 
@@ -43,10 +42,12 @@ export const driversController = {
      */
     if (isOnline && currentZoneId) {
       const known = await locationsRepository.exists(currentZoneId);
-      if (!known) throw new AppError(422, 'Unknown area', 'LOCATION_NOT_FOUND');
+      if (!known) throw new AppError(422, "Unknown area", "LOCATION_NOT_FOUND");
     }
 
-    res.json(await driversService.setOnline(user.id, isOnline, currentZoneId ?? null));
+    res.json(
+      await driversService.setOnline(user.id, isOnline, currentZoneId ?? null),
+    );
   },
 
   async updateStatus(req: Request, res: Response) {

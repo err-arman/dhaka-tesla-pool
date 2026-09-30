@@ -1,26 +1,25 @@
-import { useAuth } from '@/hooks/use-auth'
-import { ApplyToDrive } from '@/components/apply-to-drive'
-import { DeleteAccount } from '@/components/delete-account'
-import { ProfileForm } from '@/components/profile-form'
-import { Badge } from '@/components/ui/badge'
+import { useAuth } from "@/hooks/use-auth";
+import { DeleteAccount } from "@/components/delete-account";
+import { ProfileForm } from "@/components/profile-form";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card'
+} from "@/components/ui/card";
 
 /** Shown where the user has not set a value yet. */
-const EMPTY = '—'
+const EMPTY = "—";
 
 export default function PassengerProfilePage() {
-  const { user } = useAuth()
+  const { user } = useAuth();
 
   // RequireAuth only renders this once the session is authenticated.
-  if (!user) return null
+  if (!user) return null;
 
-  const initial = user.fullName.trim().charAt(0).toUpperCase() || '?'
+  const initial = user.fullName.trim().charAt(0).toUpperCase() || "?";
 
   return (
     <div className="grid gap-6">
@@ -39,8 +38,8 @@ export default function PassengerProfilePage() {
         <CardHeader>
           <CardTitle>Account</CardTitle>
           <CardDescription>
-            Your email and role are not editable here. The role is set at signup, or by
-            applying to drive below.
+            Your email and role are not editable here. The role is set at
+            signup.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-5">
@@ -75,8 +74,7 @@ export default function PassengerProfilePage() {
       </Card>
 
       <ProfileForm />
-      <ApplyToDrive />
       <DeleteAccount />
     </div>
-  )
+  );
 }

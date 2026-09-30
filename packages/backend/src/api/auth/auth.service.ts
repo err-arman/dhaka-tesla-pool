@@ -1,33 +1,36 @@
 // Business rules for signup, login, refresh rotation and logout.
-import { env } from '../../config/env';
-import { db } from '../../db';
-import { AppError } from '../../common/errors/app-error';
-import { driversService } from '../drivers/drivers.service';
-import { usersService } from '../users/users.service';
-import { authRepository } from './auth.repository';
+import { env } from "../../config/env";
+import { db } from "../../db";
+import { AppError } from "../../common/errors/app-error";
+import { driversService } from "../drivers/drivers.service";
+import { usersService } from "../users/users.service";
+import { authRepository } from "./auth.repository";
 import {
   generateRefreshToken,
   hashRefreshToken,
   refreshExpiresAt,
   signAccessToken,
-} from './auth.tokens';
-import type { LoginInput, SignupInput } from './auth.validation';
+} from "./auth.tokens";
+import type { LoginInput, SignupInput } from "./auth.validation";
 
 // Verified when the email does not exist, so response time does not reveal which
 // emails are registered. Hashed lazily on first miss, so importing this module does
 // not pay for a key derivation that only login may need.
 let dummyHash: string | undefined;
-const getDummyHash = async () => (dummyHash ??= await Bun.password.hash('not-a-real-password'));
+const getDummyHash = async () =>
+  (dummyHash ??= await Bun.password.hash("not-a-real-password"));
 
 const invalidCredentials = () =>
-  new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
+  new AppError(401, "Invalid email or password", "INVALID_CREDENTIALS");
 
-const invalidRefresh = () => new AppError(401, 'Invalid refresh token', 'UNAUTHORIZED');
+const invalidRefresh = () =>
+  new AppError(401, "Invalid refresh token", "UNAUTHORIZED");
 
 /** Creates a session row and returns a fresh token pair. The role always comes from the database. */
 async function startSession(userId: string, userAgent?: string) {
   const role = await usersService.getRole(userId);
-  if (!role) throw new AppError(401, 'Account is not available', 'UNAUTHORIZED');
+  if (!role)
+    throw new AppError(401, "Account is not available", "UNAUTHORIZED");
   const refreshToken = generateRefreshToken();
   await authRepository.create({
     userId,
@@ -52,7 +55,7 @@ export const authService = {
      * with a 403, so the profile cannot be created in a follow-up request.
      */
     const user = await db.transaction(async (tx) => {
-      const created = await usersService.createWithRole(
+      const created = await usersService.create(
         {
           fullName: input.fullName,
           email: input.email,
@@ -62,7 +65,8 @@ export const authService = {
         input.role,
         tx,
       );
-      if (input.role === 'driver') await driversService.registerProfile(created.id, tx);
+      if (input.role === "driver")
+        await driversService.registerProfile(created.id, tx);
       return created;
     });
 
@@ -76,7 +80,13 @@ export const authService = {
     // the two failure paths stays similar.
     const hash = user?.passwordHash ?? (await getDummyHash());
     const passwordOk = await Bun.password.verify(input.password, hash);
-    if (!user || !user.passwordHash || !passwordOk || !user.isActive || user.deletedAt) {
+    if (
+      !user ||
+      !user.passwordHash ||
+      !passwordOk ||
+      !user.isActive ||
+      user.deletedAt
+    ) {
       // One error for every reason, so nothing leaks about which accounts exist.
       throw invalidCredentials();
     }
@@ -87,7 +97,8 @@ export const authService = {
   async refresh(refreshToken: string) {
     const oldHash = hashRefreshToken(refreshToken);
     const session = await authRepository.findActiveByHash(oldHash);
-    if (!session || !session.userIsActive || session.userDeletedAt) throw invalidRefresh();
+    if (!session || !session.userIsActive || session.userDeletedAt)
+      throw invalidRefresh();
 
     const newToken = generateRefreshToken();
     // Only one request can win this update, so a replayed token always fails.

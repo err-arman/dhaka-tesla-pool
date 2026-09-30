@@ -1,9 +1,8 @@
 // Drizzle queries for `users`. No business rules and no HTTP errors live here —
 // services decide what a failed query means.
-import { and, eq, isNull } from 'drizzle-orm';
-import { db, type DbExecutor } from '../../db';
-import { users } from '../../db/schema';
-import type { Role } from '../../common/types/auth.types';
+import { and, eq, isNull } from "drizzle-orm";
+import { db, type DbExecutor } from "../../db";
+import { users } from "../../db/schema";
 
 /** The only user columns that may ever be sent to a client. passwordHash is absent. */
 export const publicUserColumns = {
@@ -21,7 +20,11 @@ type UserChanges = Partial<NewUser>;
 export const usersRepository = {
   /** Full row, including passwordHash. Only the auth module may call this. */
   async findByEmail(email: string, ex: DbExecutor = db) {
-    const [row] = await ex.select().from(users).where(eq(users.email, email)).limit(1);
+    const [row] = await ex
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
     return row;
   },
 
@@ -36,7 +39,10 @@ export const usersRepository = {
   },
 
   async insert(values: NewUser, ex: DbExecutor = db) {
-    const [row] = await ex.insert(users).values(values).returning(publicUserColumns);
+    const [row] = await ex
+      .insert(users)
+      .values(values)
+      .returning(publicUserColumns);
     return row;
   },
 
@@ -49,27 +55,15 @@ export const usersRepository = {
     const [row] = await ex
       .select({ role: users.role })
       .from(users)
-      .where(and(eq(users.id, id), isNull(users.deletedAt), eq(users.isActive, true)))
+      .where(
+        and(
+          eq(users.id, id),
+          isNull(users.deletedAt),
+          eq(users.isActive, true),
+        ),
+      )
       .limit(1);
     return row?.role;
-  },
-
-  /**
-   * Replaces the account's role. This is the only way a role changes now that an
-   * account holds exactly one, which is what `POST /drivers/apply` relies on to turn
-   * a passenger into a driver instead of stacking a second role on top.
-   *
-   * The `isNull(deletedAt)` and `isActive` conditions match `update`, so a soft-deleted
-   * or deactivated account cannot have its role escalated while an access token for it
-   * is still inside its TTL.
-   */
-  async setRole(id: string, role: Role, ex: DbExecutor = db) {
-    const [row] = await ex
-      .update(users)
-      .set({ role, updatedAt: new Date() })
-      .where(and(eq(users.id, id), isNull(users.deletedAt), eq(users.isActive, true)))
-      .returning({ id: users.id });
-    return row;
   },
 
   /**
@@ -82,7 +76,13 @@ export const usersRepository = {
     const [row] = await ex
       .update(users)
       .set(changes)
-      .where(and(eq(users.id, id), isNull(users.deletedAt), eq(users.isActive, true)))
+      .where(
+        and(
+          eq(users.id, id),
+          isNull(users.deletedAt),
+          eq(users.isActive, true),
+        ),
+      )
       .returning(publicUserColumns);
     return row;
   },
