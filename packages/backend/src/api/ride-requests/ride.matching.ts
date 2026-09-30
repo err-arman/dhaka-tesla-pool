@@ -6,11 +6,17 @@
 // possible matches can have changed. Anything more would need a scheduler and a way to
 // stop, for no gain at this size.
 
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { db, type DbExecutor } from '../../db';
-import { driverProfiles, locations, pools, rideRequests, vehicles } from '../../db/schema';
-import { haversineKm, isWithinKm } from '../../common/geo/distance';
-import { farePoisha, MAX_JOIN_DISTANCE_KM } from './ride.fare';
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { db, type DbExecutor } from "../../db";
+import {
+  driverProfiles,
+  locations,
+  pools,
+  rideRequests,
+  vehicles,
+} from "../../db/schema";
+import { haversineKm, isWithinKm } from "../../common/geo/distance";
+import { farePoisha, MAX_JOIN_DISTANCE_KM } from "./ride.fare";
 
 /**
  * Picks up every waiting request and tries to place it.
@@ -39,140 +45,132 @@ export async function runMatching(ex?: DbExecutor): Promise<MatchingSummary> {
 
 async function matchWithin(tx: DbExecutor): Promise<MatchingSummary> {
   const open = await tx
-      .select()
-      .from(rideRequests)
-      .where(eq(rideRequests.status, 'requested'))
-      // `for` locks the selected rows, so it has to precede `orderBy` in the builder
-      // chain -- the reverse order emits the lock clause in the wrong place.
-      .for('update', { skipLocked: true })
-      .orderBy(asc(rideRequests.createdAt));
+    .select()
+    .from(rideRequests)
+    .where(eq(rideRequests.status, "requested"))
+    // `for` locks the selected rows, so it has to precede `orderBy` in the builder
+    // chain -- the reverse order emits the lock clause in the wrong place.
+    .for("update", { skipLocked: true })
+    .orderBy(asc(rideRequests.createdAt));
 
-    const summary: MatchingSummary = {
-      considered: open.length,
-      matched: 0,
-      stillWaiting: 0,
-      poolsCreated: 0,
-    };
-    if (open.length === 0) return summary;
+  const summary: MatchingSummary = {
+    considered: open.length,
+    matched: 0,
+    stillWaiting: 0,
+    poolsCreated: 0,
+  };
+  if (open.length === 0) return summary;
 
-    const areaCache = new Map<string, { lat: number; lng: number }>();
-    async function area(id: string, ex: DbExecutor) {
-      const cached = areaCache.get(id);
-      if (cached) return cached;
-      const [row] = await ex
-        .select({ lat: locations.lat, lng: locations.lng })
-        .from(locations)
-        .where(eq(locations.id, id))
-        .limit(1);
-      // Missing rows are impossible while the foreign keys hold, so the null is a
-      // type-satisfying default rather than a case worth handling.
-      const point = { lat: row?.lat ?? 0, lng: row?.lng ?? 0 };
-      areaCache.set(id, point);
-      return point;
-    }
+  const areaCache = new Map<string, { lat: number; lng: number }>();
+  async function area(id: string, ex: DbExecutor) {
+    const cached = areaCache.get(id);
+    if (cached) return cached;
+    const [row] = await ex
+      .select({ lat: locations.lat, lng: locations.lng })
+      .from(locations)
+      .where(eq(locations.id, id))
+      .limit(1);
+    // Missing rows are impossible while the foreign keys hold, so the null is a
+    // type-satisfying default rather than a case worth handling.
+    const point = { lat: row?.lat ?? 0, lng: row?.lng ?? 0 };
+    areaCache.set(id, point);
+    return point;
+  }
 
-    for (const request of open) {
-      const pickup = await area(request.pickupLocationId, tx);
-      const destination = await area(request.destinationLocationId, tx);
+  for (const request of open) {
+    const pickup = await area(request.pickupLocationId, tx);
+    const destination = await area(request.destinationLocationId, tx);
+
+    /*
+     * A driver's eligibility depends on where they are working, so the candidate query
+     * cannot be a plain join on two `locations` aliases compared by a SQL expression:
+     * the distance is Haversine over lat/lng, which is clearer and cheaper to evaluate
+     * in JS than to inline as a SQL expression, and the candidate set is tiny -- the
+     * online drivers, not the whole fleet.
+     */
+    const candidates = await tx
+      .select({
+        vehicleId: vehicles.id,
+        seats: vehicles.seats,
+        driverId: vehicles.driverId,
+        currentZoneId: driverProfiles.currentZoneId,
+      })
+      .from(vehicles)
+      .innerJoin(
+        driverProfiles,
+        and(
+          eq(driverProfiles.userId, vehicles.driverId),
+          eq(driverProfiles.isOnline, true),
+          eq(driverProfiles.status, "approved"),
+        ),
+      )
+      .where(eq(vehicles.isActive, true))
+      /*
+       * Locked, and this is load-bearing rather than defensive.
+       *
+       * Two matching passes run concurrently whenever two drivers come online at once, or
+       * a request arrives while another is being matched. Each locks the `requested`
+       * rows it is handling, which protects the requests, but nothing protected the
+       * vehicles: both passes could read the same vehicle as pool-free and each try to
+       * insert a pool for it. `pools_one_open_per_vehicle` then rejects the loser -- but
+       * as a constraint violation it aborts that pass's whole transaction, taking every
+       * other successful match in it down with the one that collided.
+       *
+       */
+      .for("update", { of: vehicles })
+      .orderBy(asc(vehicles.id));
+
+    let placed = false;
+
+    for (const vehicle of candidates) {
+      // A driver cannot pick up the person they are sharing with.
+      if (vehicle.driverId === request.passengerId) continue;
+      if (!vehicle.currentZoneId) continue;
+
+      const zone = await area(vehicle.currentZoneId, tx);
+      if (!isWithinKm(zone, pickup, MAX_JOIN_DISTANCE_KM)) continue;
+
+      const openPool = await findOpenPoolForVehicle(vehicle.vehicleId, tx);
+
+      if (!openPool) {
+        // False means the request asked for more seats than this vehicle has. This is
+        // a property of the REQUEST, not of this driver, so the loop moves on to the
+        // next candidate instead of breaking.
+        if (
+          !(await createPoolWith(request, vehicle.vehicleId, vehicle.seats, tx))
+        ) {
+          continue;
+        }
+        summary.poolsCreated++;
+        placed = true;
+        break;
+      }
+
+      // A driver may accept another passenger until arriving at pickup. Once the trip
+      // has started, the vehicle is no longer available for new passengers.
+      if (!["matched", "accepted"].includes(openPool.status)) continue;
 
       /*
-       * A driver's eligibility depends on where they are working, so the candidate query
-       * cannot be a plain join on two `locations` aliases compared by a SQL expression:
-       * the distance is Haversine over lat/lng, which is clearer and cheaper to evaluate
-       * in JS than to inline as a SQL expression, and the candidate set is tiny -- the
-       * online drivers, not the whole fleet.
+       * Joining an existing pool has three separate ways to fail, and each needs a
+       * different response, so they are checked in cheapest-first order.
        */
-      const candidates = await tx
-        .select({
-          vehicleId: vehicles.id,
-          seats: vehicles.seats,
-          driverId: vehicles.driverId,
-          currentZoneId: driverProfiles.currentZoneId,
-        })
-        .from(vehicles)
-        .innerJoin(
-          driverProfiles,
-          and(
-            eq(driverProfiles.userId, vehicles.driverId),
-            eq(driverProfiles.isOnline, true),
-            eq(driverProfiles.status, 'approved'),
-          ),
-        )
-        .where(eq(vehicles.isActive, true))
-        /*
-         * Locked, and this is load-bearing rather than defensive.
-         *
-         * Two matching passes run concurrently whenever two drivers come online at once, or
-         * a request arrives while another is being matched. Each locks the `requested`
-         * rows it is handling, which protects the requests, but nothing protected the
-         * vehicles: both passes could read the same vehicle as pool-free and each try to
-         * insert a pool for it. `pools_one_open_per_vehicle` then rejects the loser -- but
-         * as a constraint violation it aborts that pass's whole transaction, taking every
-         * other successful match in it down with the one that collided.
-         *
-         */
-        .for('update', { of: vehicles })
-        .orderBy(asc(vehicles.id));
+      // A join has to agree with the pool on both ends: same pickup, and a destination
+      // within the threshold of the pool's anchor. Comparing against the anchor rather
+      // than against the previous passenger's destination is what keeps the group from
+      // drifting -- A->B plus B->C within 3 km each would otherwise chain across a
+      // distance nobody agreed to travel.
+      if (openPool.pickupLocationId !== request.pickupLocationId) continue;
 
-      let placed = false;
+      const poolDestination = await area(openPool.destinationLocationId, tx);
+      if (!isWithinKm(poolDestination, destination, MAX_JOIN_DISTANCE_KM))
+        continue;
 
-      for (const vehicle of candidates) {
-        // A driver cannot pick up the person they are sharing with.
-        if (vehicle.driverId === request.passengerId) continue;
-        if (!vehicle.currentZoneId) continue;
-
-        const zone = await area(vehicle.currentZoneId, tx);
-        if (!isWithinKm(zone, pickup, MAX_JOIN_DISTANCE_KM)) continue;
-
-        const openPool = await findOpenPoolForVehicle(vehicle.vehicleId, tx);
-
-        if (!openPool) {
-          // False means the request asked for more seats than this vehicle has. This is
-          // a property of the REQUEST, not of this driver, so the loop moves on to the
-          // next candidate instead of breaking.
-          if (!(await createPoolWith(request, vehicle.vehicleId, vehicle.seats, tx))) {
-            continue;
-          }
-          summary.poolsCreated++;
-          placed = true;
-          break;
-        }
-
-        /*
-         * Only a pool still awaiting its driver can gain a passenger.
-         *
-         * Once the driver has accepted, the passenger count and every fare in that pool
-         * are settled from the driver's point of view -- they agreed to carry N people. A
-         * later join would silently re-price the existing passengers and change the car
-         * they are already on their way in, with nobody asked. Same for a pool that has
-         * moved on to `driver_arrived` or `started`: the trip has physically begun.
-         *
-         * So this vehicle is skipped entirely rather than treated as "no open pool",
-         * because `pools_one_open_per_vehicle` means the correct outcome is that its
-         * existing trip keeps going and this request waits for a different vehicle.
-         */
-        if (openPool.status !== 'matched') continue;
-
-        /*
-         * Joining an existing pool has three separate ways to fail, and each needs a
-         * different response, so they are checked in cheapest-first order.
-         */
-        // A join has to agree with the pool on both ends: same pickup, and a destination
-        // within the threshold of the pool's anchor. Comparing against the anchor rather
-        // than against the previous passenger's destination is what keeps the group from
-        // drifting -- A->B plus B->C within 3 km each would otherwise chain across a
-        // distance nobody agreed to travel.
-        if (openPool.pickupLocationId !== request.pickupLocationId) continue;
-
-        const poolDestination = await area(openPool.destinationLocationId, tx);
-        if (!isWithinKm(poolDestination, destination, MAX_JOIN_DISTANCE_KM)) continue;
-
-        if (await attachToPool(request, openPool.id, tx)) {
-          placed = true;
-          break;
-        }
-        // Lost the race for the last seats: another vehicle may still work.
+      if (await attachToPool(request, openPool.id, tx)) {
+        placed = true;
+        break;
       }
+      // Lost the race for the last seats: another vehicle may still work.
+    }
 
     if (placed) summary.matched++;
     else summary.stillWaiting++;
@@ -202,7 +200,12 @@ async function findOpenPoolForVehicle(vehicleId: string, tx: DbExecutor) {
     .where(
       and(
         eq(pools.vehicleId, vehicleId),
-        inArray(pools.status, ['matched', 'accepted', 'driver_arrived', 'started']),
+        inArray(pools.status, [
+          "matched",
+          "accepted",
+          "driver_arrived",
+          "started",
+        ]),
       ),
     )
     .limit(1);
@@ -312,7 +315,7 @@ async function pricePoolAndAttach(
   // Joining is what makes a request `matched`, and it has to be the same write that sets
   // `pool_id`: `ride_requests_requested_has_no_pool` forbids a `requested` row that already
   // points at a pool, so splitting the two would fail that check on every match.
-  await writeMemberFares(poolId, all, tx, 'matched');
+  await writeMemberFares(poolId, all, tx, "matched");
 }
 
 /**
@@ -345,7 +348,10 @@ async function activeMembers(poolId: string, tx: DbExecutor) {
     .select()
     .from(rideRequests)
     .where(
-      and(eq(rideRequests.poolId, poolId), sql`${rideRequests.status} <> 'cancelled'`),
+      and(
+        eq(rideRequests.poolId, poolId),
+        sql`${rideRequests.status} <> 'cancelled'`,
+      ),
     );
 }
 
@@ -363,7 +369,7 @@ async function activeMembers(poolId: string, tx: DbExecutor) {
  */
 async function writeMemberFares(
   poolId: string,
-  all: typeof rideRequests.$inferSelect[],
+  all: (typeof rideRequests.$inferSelect)[],
   tx: DbExecutor,
   newStatus?: typeof rideRequests.$inferSelect.status,
 ) {

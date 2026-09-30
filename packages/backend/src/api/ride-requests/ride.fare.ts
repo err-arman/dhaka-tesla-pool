@@ -3,9 +3,6 @@
 // 100 poisha is ৳1. Storing taka as an integer would make ৳12.50 inexpressible, and
 // storing decimals in an integer column would mean rounding twice.
 export const FARE = {
-  /** ৳50, charged once per ride regardless of distance. */
-  BASE_POISHA: 5000,
-
   /** ৳25 per whole kilometre. See `chargeableDistanceKm` for why it is whole. */
   PER_KM_POISHA: 2500,
 
@@ -48,7 +45,7 @@ export function chargeableDistanceKm(km: number): number {
 
 /** What one passenger pays before any pool discount. */
 export function grossFarePoisha(km: number): number {
-  return FARE.BASE_POISHA + chargeableDistanceKm(km) * FARE.PER_KM_POISHA;
+  return chargeableDistanceKm(km) * FARE.PER_KM_POISHA;
 }
 
 /**
