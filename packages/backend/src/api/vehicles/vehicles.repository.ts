@@ -1,5 +1,9 @@
-// Drizzle queries for `vehicles`. Every read and write is scoped by driverId so a
-// driver can only ever touch their own rows.
+// Drizzle queries for `vehicles`.
+//
+// A driver has at most one *active* vehicle (enforced by the partial unique index
+// `vehicles_one_active_per_driver`), so every query here is scoped by driverId and
+// none of them take a vehicle id. Inactive rows are kept as history and are only
+// ever read by findActiveByDriver.
 import { and, eq } from 'drizzle-orm';
 import { db, type DbExecutor } from '../../db';
 import { vehicles } from '../../db/schema';
@@ -11,9 +15,22 @@ const vehicleColumns = {
   isActive: vehicles.isActive,
 };
 
-type VehicleChanges = Partial<{ seats: number; isActive: boolean }>;
-
 export const vehiclesRepository = {
+  /** The driver's current vehicle, or undefined if they have none active. */
+  async findActiveByDriver(driverId: string, ex: DbExecutor = db) {
+    const [row] = await ex
+      .select(vehicleColumns)
+      .from(vehicles)
+      .where(and(eq(vehicles.driverId, driverId), eq(vehicles.isActive, true)))
+      .limit(1);
+    return row;
+  },
+
+  /**
+   * Creates the driver's vehicle. The caller is expected to have checked that none
+   * is active, so hitting the unique index here is a genuine 409 rather than a
+   * race the caller could have avoided.
+   */
   async create(driverId: string, seats: number | undefined, ex: DbExecutor = db) {
     const [row] = await ex
       .insert(vehicles)
@@ -22,19 +39,25 @@ export const vehiclesRepository = {
     return row;
   },
 
-  async listByDriver(driverId: string, ex: DbExecutor = db) {
-    return ex.select(vehicleColumns).from(vehicles).where(eq(vehicles.driverId, driverId));
-  },
-
-  /**
-   * Ownership is part of the WHERE clause rather than a separate read, so a vehicle
-   * belonging to someone else looks exactly like a vehicle that does not exist.
-   */
-  async updateOwnedById(id: string, driverId: string, changes: VehicleChanges, ex: DbExecutor = db) {
+  async updateActiveByDriver(
+    driverId: string,
+    changes: { seats?: number },
+    ex: DbExecutor = db
+  ) {
     const [row] = await ex
       .update(vehicles)
       .set(changes)
-      .where(and(eq(vehicles.id, id), eq(vehicles.driverId, driverId)))
+      .where(and(eq(vehicles.driverId, driverId), eq(vehicles.isActive, true)))
+      .returning(vehicleColumns);
+    return row;
+  },
+
+  /** Soft delete. The row stays so the driver can register a new one later. */
+  async deactivateActiveByDriver(driverId: string, ex: DbExecutor = db) {
+    const [row] = await ex
+      .update(vehicles)
+      .set({ isActive: false })
+      .where(and(eq(vehicles.driverId, driverId), eq(vehicles.isActive, true)))
       .returning(vehicleColumns);
     return row;
   },

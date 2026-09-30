@@ -1,36 +1,37 @@
 // HTTP layer for /vehicles.
+//
+// No :id routes, because a driver has at most one active vehicle and the caller's
+// own driverId is the only key involved.
 import type { Request, Response } from 'express';
 import { requireUser } from '../../common/middleware/authenticate';
 import { vehiclesService } from './vehicles.service';
-import {
-  createVehicleSchema,
-  updateVehicleSchema,
-  vehicleParamsSchema,
-} from './vehicles.validation';
+import { patchVehicleSchema, putVehicleSchema } from './vehicles.validation';
 
 export const vehiclesController = {
-  async create(req: Request, res: Response) {
+  /** GET the caller's vehicle. 404 when they have not registered one yet. */
+  async get(req: Request, res: Response) {
     const user = requireUser(req);
-    const input = createVehicleSchema.parse(req.body ?? {});
-    res.status(201).json(await vehiclesService.create(user.id, input));
+    res.json(await vehiclesService.get(user.id));
   },
 
-  async list(req: Request, res: Response) {
+  /** PUT registers the vehicle, or changes the seats of the one they have. */
+  async put(req: Request, res: Response) {
     const user = requireUser(req);
-    res.json(await vehiclesService.list(user.id));
+    const input = putVehicleSchema.parse(req.body ?? {});
+    res.json(await vehiclesService.put(user.id, input));
   },
 
+  /** PATCH changes part of the vehicle they already have. 404 if they have none. */
   async update(req: Request, res: Response) {
     const user = requireUser(req);
-    const { id } = vehicleParamsSchema.parse(req.params);
-    const input = updateVehicleSchema.parse(req.body ?? {});
-    res.json(await vehiclesService.update(user.id, id, input));
+    const input = patchVehicleSchema.parse(req.body ?? {});
+    res.json(await vehiclesService.patch(user.id, input));
   },
 
+  /** DELETE deactivates the caller's vehicle. 204 on success. */
   async remove(req: Request, res: Response) {
     const user = requireUser(req);
-    const { id } = vehicleParamsSchema.parse(req.params);
-    await vehiclesService.deactivate(user.id, id);
+    await vehiclesService.remove(user.id);
     res.status(204).send();
   },
 };

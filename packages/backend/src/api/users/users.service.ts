@@ -3,7 +3,7 @@
 import { db, type DbExecutor } from '../../db';
 import { AppError } from '../../common/errors/app-error';
 import { isUniqueViolation, uniqueConstraintName } from '../../common/errors/db-errors';
-import type { Role } from '../../common/types/auth.types';
+import type { Role, SelfAssignableRole } from '../../common/types/auth.types';
 import { usersRepository } from './users.repository';
 import type { UpdateProfileInput } from './users.validation';
 
@@ -46,27 +46,32 @@ export const usersService = {
     return { ...user, roles };
   },
 
-  /** Inserts the account and grants the default `passenger` role atomically. */
-  async createWithPassenger(input: SignupInput) {
+  /**
+   * Inserts the account and grants the chosen role. Takes the role as a parameter
+   * rather than defaulting to 'passenger', so signup can open as a driver; the
+   * narrowing to SelfAssignableRole happens in the signup schema.
+   *
+   * Does not open a transaction: the caller owns it, so signup can add the driver
+   * profile to the same one. The unique-violation mapping works either way.
+   */
+  async createWithRole(input: SignupInput, role: SelfAssignableRole, ex: DbExecutor = db) {
     try {
-      return await db.transaction(async (tx) => {
-        const existing = await usersRepository.findByEmail(input.email, tx);
-        if (existing) throw emailTaken();
+      const existing = await usersRepository.findByEmail(input.email, ex);
+      if (existing) throw emailTaken();
 
-        const user = await usersRepository.insert(
-          {
-            fullName: input.fullName,
-            email: input.email,
-            phone: input.phone,
-            passwordHash: input.passwordHash,
-          },
-          tx,
-        );
-        if (!user) throw new AppError(500, 'Could not create the account', 'INTERNAL');
+      const user = await usersRepository.insert(
+        {
+          fullName: input.fullName,
+          email: input.email,
+          phone: input.phone,
+          passwordHash: input.passwordHash,
+        },
+        ex,
+      );
+      if (!user) throw new AppError(500, 'Could not create the account', 'INTERNAL');
 
-        await usersRepository.addRole(user.id, 'passenger', tx);
-        return user;
-      });
+      await usersRepository.addRole(user.id, role, ex);
+      return user;
     } catch (err) {
       // Two signups can race past the check above, so the unique index is the real
       // guard. Email and phone share the same 23505 code, so read the constraint

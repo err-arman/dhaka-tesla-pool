@@ -1,4 +1,4 @@
-import { primaryKey } from "drizzle-orm/cockroach-core/primary-keys";
+import { primaryKey } from "drizzle-orm/pg-core";
 import { uuid, timestamp } from "drizzle-orm/pg-core/columns";
 import { pgTable } from "drizzle-orm/pg-core/table";
 import { users, roleEnum } from "../user/users.schema";

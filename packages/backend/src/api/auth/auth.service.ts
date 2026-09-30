@@ -1,6 +1,8 @@
 // Business rules for signup, login, refresh rotation and logout.
 import { env } from '../../config/env';
+import { db } from '../../db';
 import { AppError } from '../../common/errors/app-error';
+import { driversService } from '../drivers/drivers.service';
 import { usersService } from '../users/users.service';
 import { authRepository } from './auth.repository';
 import {
@@ -42,12 +44,27 @@ async function startSession(userId: string, userAgent?: string) {
 export const authService = {
   async signup(input: SignupInput, userAgent?: string) {
     const passwordHash = await Bun.password.hash(input.password);
-    const user = await usersService.createWithPassenger({
-      fullName: input.fullName,
-      email: input.email,
-      phone: input.phone,
-      passwordHash,
+
+    /*
+     * One transaction for the account, the role and the driver profile. A driver
+     * without a profile row would pass the `driver` role but fail requireApprovedDriver
+     * with a 403, so the profile cannot be created in a follow-up request.
+     */
+    const user = await db.transaction(async (tx) => {
+      const created = await usersService.createWithRole(
+        {
+          fullName: input.fullName,
+          email: input.email,
+          phone: input.phone,
+          passwordHash,
+        },
+        input.role,
+        tx,
+      );
+      if (input.role === 'driver') await driversService.registerProfile(created.id, tx);
+      return created;
     });
+
     const tokens = await startSession(user.id, userAgent);
     return { user: await usersService.getPublicUser(user.id), ...tokens };
   },
@@ -94,8 +111,14 @@ export const authService = {
     await authRepository.revokeByHash(hashRefreshToken(refreshToken));
   },
 
-  /** Revokes every session the account owns. Also used when an account is deleted. */
-  async logoutAll(userId: string) {
+  /**
+   * Revokes every session the account owns. Not exposed as a route: there is no
+   * "sign out everywhere" button, and revoking other devices' sessions is a
+   * foot-gun (one shared machine signs out the household). It exists because
+   * `DELETE /users/me` needs it — a soft-deleted account must not keep working
+   * until its access token expires.
+   */
+  async revokeAllSessions(userId: string) {
     await authRepository.revokeAllForUser(userId);
   },
 };

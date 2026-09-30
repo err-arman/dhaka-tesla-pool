@@ -18,7 +18,9 @@ app.use(
   cors({
     // Must run before the routes so browser preflight requests are answered.
     origin: env.CORS_ORIGINS.length > 0 ? env.CORS_ORIGINS : false,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    // Every method the v1 router actually serves. PUT is the vehicles singleton
+    // upsert, so leaving it out blocked preflight and made the form dead.
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );

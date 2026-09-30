@@ -48,20 +48,28 @@ export const usersRepository = {
   },
 
   /**
-   * `user_roles` has no primary key in the generated migration, so the database
-   * accepts duplicate rows. Check first and insert only when missing.
+   * The composite primary key on (user_id, role) is what makes this safe: the
+   * earlier check-then-insert left a window where two concurrent grants both saw
+   * no row and both inserted, giving a user a token with `roles: ['driver','driver']`.
+   * `onConflictDoNothing` keeps it to a single atomic statement and makes a repeat
+   * grant a no-op rather than a 23505.
    */
   async addRole(userId: string, role: Role, ex: DbExecutor = db) {
-    const [existing] = await ex
-      .select({ role: userRoles.role })
-      .from(userRoles)
-      .where(and(eq(userRoles.userId, userId), eq(userRoles.role, role)))
-      .limit(1);
-    if (!existing) await ex.insert(userRoles).values({ userId, role });
+    await ex.insert(userRoles).values({ userId, role }).onConflictDoNothing();
   },
 
+  /**
+   * Same visibility rule as `findActivePublicById`: a soft-deleted or deactivated
+   * account must not be able to mutate itself while its access token is still
+   * within TTL. Without this guard `PATCH /users/me` returned 200 for a user that
+   * `GET /users/me` treats as gone. No row means the caller maps it to 404.
+   */
   async update(id: string, changes: UserChanges, ex: DbExecutor = db) {
-    const [row] = await ex.update(users).set(changes).where(eq(users.id, id)).returning(publicUserColumns);
+    const [row] = await ex
+      .update(users)
+      .set(changes)
+      .where(and(eq(users.id, id), isNull(users.deletedAt), eq(users.isActive, true)))
+      .returning(publicUserColumns);
     return row;
   },
 

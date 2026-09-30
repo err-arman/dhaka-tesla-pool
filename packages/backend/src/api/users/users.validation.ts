@@ -16,11 +16,15 @@ const avatarUrl = z.url().max(500);
 
 // Email is deliberately absent: changing it needs a verification step, so the
 // endpoint cannot silently repoint an account at an address nobody proved they own.
+//
+// `phone` and `avatarUrl` are nullable so a field can actually be cleared. Omitting a
+// key leaves the column alone, which is different from sending null: without the null
+// a client could only ever set these once and never remove them.
 export const updateProfileSchema = z
   .object({
     fullName: fullName.optional(),
-    phone: phone.optional(),
-    avatarUrl: avatarUrl.optional(),
+    phone: phone.nullable().optional(),
+    avatarUrl: avatarUrl.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'Provide at least one field',

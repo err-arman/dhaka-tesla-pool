@@ -23,9 +23,10 @@ export const usersController = {
     // The module dependency rule stops users.service from importing auth, and a
     // service must not call another module. This controller is the only layer that
     // sees both, so it performs the two writes in the order the spec requires:
-    // deactivate the account first, then revoke every session it owns.
+    // deactivate the account first, then revoke every session it owns. Without the
+    // second write the account would keep working until its access token expired.
     await usersService.softDelete(user.id);
-    await authService.logoutAll(user.id);
+    await authService.revokeAllSessions(user.id);
     res.status(204).send();
   },
 };
