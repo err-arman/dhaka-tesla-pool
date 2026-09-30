@@ -1,75 +1,126 @@
-# React + TypeScript + Vite
+# Tesla Pool — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Vite + React 19 + TypeScript, with shadcn/ui on Tailwind v4. Currently covers the
+auth flow: signup, login, session persistence, and sign-out.
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+bun install
+bun run dev        # http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+The API must be running on port 8080. From the repo root, `bun run dev` starts both
+via mprocs.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Env
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Variable       | Default                     | Purpose                        |
+| -------------- | --------------------------- | ------------------------------ |
+| `VITE_API_URL` | `http://localhost:8080/api/v1` | Backend origin, `/api/v1` included |
+
+Copy `.env.example` to `.env` to change it. The backend's `CORS_ORIGINS` must list
+the frontend origin — it currently allows only `http://localhost:5173`, so Vite
+falling back to 5174 will be blocked by CORS.
+
+## Auth design
+
+- Tokens live in `localStorage` under `tesla-pool.accessToken` / `tesla-pool.refreshToken`.
+  A page reload keeps the session, and the backend has no cookie session to fall back on.
+  A stricter deployment would move the refresh token to an httpOnly cookie.
+- `src/lib/api.ts` refreshes automatically on a `401`: it swaps the tokens and replays
+  the original request once. Concurrent 401s share a single in-flight refresh, because
+  the backend rotates the refresh token and two parallel refreshes would sign the user out.
+- `AuthProvider` re-hydrates the user on mount via `GET /users/me`, so `status` is
+  `loading` until that resolves. `RequireAuth` renders nothing while loading, which
+  avoids flashing the login screen at a signed-in user.
+- Sign out clears local state and cache first, then revokes the one refresh token it
+  held, so it still works offline. There is no "sign out everywhere": the backend has no
+  such route, and revoking another device's session from a shared browser is a foot-gun.
+- If a refresh fails, `src/lib/api.ts` evicts the tokens and calls the handler
+  `AuthProvider` registers, so an expired session lands on the login screen instead of
+  stranding the user on a page where every request 401s.
+- The zod schemas in `src/lib/schemas.ts` mirror the backend's, but only for instant
+  feedback. The backend validates every request again and its response wins on conflict.
+
+## Routes
+
+| Route       | Access        |
+| ----------- | ------------- |
+| `/login`    | public, redirects to `/dashboard` when signed in |
+| `/signup`   | public, redirects when signed in; sends the chosen role, lands on `/driver` or `/dashboard` |
+| `/dashboard`| requires a session |
+
+## Structure
 
 ```
+src/
+  components/ui/   shadcn primitives (button, card, form, input, label, separator)
+  hooks/           useAuth, route guards
+  lib/             api client, zod schemas, types, cn()
+  pages/           login, signup, dashboard
+  providers/       auth context and provider
+```
+
+## Scripts
+
+```bash
+bun run dev       # dev server
+bun run build     # tsc -b && vite build
+bun run lint      # eslint
+bun run preview   # serve the production build
+```
+
+## Driver area
+
+`/login` and `/signup` both have a Passenger | Driver tab, but they mean different
+things:
+
+- **On login** the tab is only a landing page. There is one `/auth/login`, the server
+  returns the roles the account actually holds, and a passenger who picks the Driver
+  tab lands on `/driver`, where the backend's guard decides what they may do.
+- **On signup** the tab is a real decision. The chosen `role` is sent to the server,
+  which grants it and creates the driver profile in the same transaction. A driver can
+  therefore register a vehicle straight away and is sent to `/driver` after signup.
+
+The signup tab lives in form state (`role`, read with `useWatch`) rather than component
+state, so the tab, the card description and the submitted payload cannot disagree.
+`admin` is not an option on either tab; the server rejects it.
+
+- `/driver` — driver status and your vehicle
+- `/driver/vehicle` — register, edit seats, or remove
+
+A passenger who signed up as a passenger can still become a driver later with the
+Apply button on `/driver` (`POST /drivers/apply`).
+
+A driver has at most one active vehicle, so `VehicleCard` renders a single vehicle
+rather than a list. A `404` from `GET /vehicles` means "not registered yet" and
+shows the register form instead of an error. `PUT` is an upsert, `PATCH` is a partial
+change that `404`s when there is nothing to change, and `DELETE` is a soft delete, so
+a removed driver can register again.
+
+## Account management
+
+`/dashboard` carries the whole account surface, because it is where the signed-in
+user already lands:
+
+- `ProfileForm` edits `fullName`, `phone` and `avatarUrl`. Email has no input on
+  purpose — the backend has no email key, since changing it needs a verification step.
+  The form holds `''` for an unset column and `profilePayload` turns that into `null`,
+  which is how a field gets **cleared**; sending an empty string would fail the format
+  check instead. After a save it calls `refreshUser()` and then `form.reset()` from
+  the response, so the header and the form re-seed from what the server actually
+  stored. It uses `defaultValues`, not `values`, because a fresh object literal on
+  every render would reset the form mid-typing.
+- `DeleteAccount` is a typed confirmation rather than a dialog: the project has no
+  dialog primitive, and adding `@radix-ui/react-dialog` for one destructive button is
+  not worth a dependency. The button reveals a field that must read `DELETE` exactly.
+- `VehicleCard` uses **PUT** to register and **PATCH** to change seats, with a
+  `mode` prop choosing the verb and the schema. PATCH requires a value because the
+  backend refuses an empty body; PUT allows an empty one so the server can apply its
+  column default.
+
+## Not built yet
+
+Password reset, email verification and change-password. There are no routes, tables
+or tokens for any of them, so a user who forgets their password is locked out.
