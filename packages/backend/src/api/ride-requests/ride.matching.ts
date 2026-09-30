@@ -5,10 +5,7 @@
 // request arrives and when a driver comes online, which is exactly when the set of
 // possible matches can have changed. Anything more would need a scheduler and a way to
 // stop, for no gain at this size.
-//
-// Ordering by `created_at` is a fairness rule, not a performance one: earlier requests
-// get first claim on the driver's seats, so one passenger repeatedly submitting cannot
-// jump the queue.
+
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '../../db';
 import { driverProfiles, locations, pools, rideRequests, vehicles } from '../../db/schema';
@@ -113,14 +110,6 @@ async function matchWithin(tx: DbExecutor): Promise<MatchingSummary> {
          * as a constraint violation it aborts that pass's whole transaction, taking every
          * other successful match in it down with the one that collided.
          *
-         * Locking the vehicle rows serialises the two passes on the row that matters. The
-         * `orderBy` immediately below is what keeps that safe: both passes request the same
-         * vehicles in the same order, so they queue rather than deadlock.
-         *
-         * `of: vehicles` scopes the lock to the vehicles table. Without it the inner join
-         * would also lock the `driver_profiles` rows, which a concurrent "go offline"
-         * legitimately holds -- the driver toggling their own status should not block on a
-         * matching pass that is only reading it.
          */
         .for('update', { of: vehicles })
         .orderBy(asc(vehicles.id));

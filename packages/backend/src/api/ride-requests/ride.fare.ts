@@ -1,10 +1,4 @@
 // The fare rule, in one place.
-//
-// PLACEHOLDER NUMBERS, agreed as such. They are deliberately isolated in this file
-// rather than inlined in the matching service, so replacing them with real pricing later
-// is an edit to one file and not a search. Anything derived from them (the join
-// threshold, the minimum pool size) is derived here too for the same reason.
-//
 // Every amount is in POISHA, because `ride_requests.fare_amount` is an integer column:
 // 100 poisha is ৳1. Storing taka as an integer would make ৳12.50 inexpressible, and
 // storing decimals in an integer column would mean rounding twice.
@@ -59,11 +53,6 @@ export function grossFarePoisha(km: number): number {
 
 /**
  * The final fare for a passenger, given how many passengers share the ride.
- *
- * `passengerCount` is the number of riders in the pool INCLUDING this one, so a pool of
- * two gives each rider the discount. Returns 0 for a nonsense count rather than a
- * negative fare: a bad count is a bug in the caller, and clamping keeps it from becoming
- * money owed in the other direction.
  */
 export function farePoisha(km: number, passengerCount: number): number {
   const gross = grossFarePoisha(km);

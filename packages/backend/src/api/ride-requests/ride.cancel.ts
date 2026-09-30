@@ -1,46 +1,13 @@
 // Cancelling a request, by the passenger who made it.
-//
-// This is deliberately NOT part of `ride.pool.ts`. That module is the driver's state
-// machine and every entry point in it proves the caller owns the vehicle; a passenger
-// cancelling their own seat has no vehicle to prove, and routing it through
-// `transitionPool` would mean a second, differently-permissioned path into the same
-// status column. Keeping it separate makes it obvious that the pool status written below
-// is a *consequence* of a passenger leaving, not a thing anybody asks for.
-//
-// The policy, since cancelling a shared ride has more than one reasonable answer and
-// somebody has to pick:
-//
-//   - **A passenger may cancel until the trip is underway.** `requested` (never matched)
-//     and `matched` are cancellable; `in_progress` is not. Once the car is moving the
-//     passenger is physically in it and the driver owns what happens next, so there is
-//     nothing a passenger can still usefully cancel. `completed` and `cancelled` are
-//     terminal, so cancelling them twice is a conflict rather than a silent success.
-//   - **Cancelling keeps the row.** The request stays in the passenger's history as
-//     `cancelled`, and keeps its `pool_id`, which is the only record of which journey it
-//     was ever part of. Nothing is deleted.
-//   - **Leaving a pool returns the seats and re-prices the others.** A group discount is a
-//     function of the headcount, so the people still in the car pay *more* each once
-//     someone leaves. Not re-pricing would keep handing them a discount for a group that
-//     no longer exists.
-//   - **An emptied pool is cancelled.** The driver's trip no longer has anyone in it, and
-//     the driver should not be left holding a live trip with a phantom passenger. The
-//     pool keeps its pickup/destination anchors, so if members remain the journey is
-//     unaffected -- the anchors define where the car is going, not who is on board.
-//   - **A driver cannot cancel.** Abandoning passengers already in the car is a different
-//     and much larger question (where do they go, is their fare refunded, is there a
-//     penalty), and there is no route for it. Nothing here is reachable by a driver.
-//
-// There is no cancellation penalty. Fares are stored, never charged, so a penalty would be
-// a number nobody could act on; if one is wanted later it belongs on the cancelled
-// request, not in the pool transition.
-import { and, eq, sql } from 'drizzle-orm';
-import { db, type DbExecutor } from '../../db';
-import { pools, rideRequests, vehicles } from '../../db/schema';
-import { AppError } from '../../common/errors/app-error';
-import { repricePoolMembers } from './ride.matching';
+
+import { and, eq, sql } from "drizzle-orm";
+import { db, type DbExecutor } from "../../db";
+import { pools, rideRequests, vehicles } from "../../db/schema";
+import { AppError } from "../../common/errors/app-error";
+import { repricePoolMembers } from "./ride.matching";
 
 /** The states a passenger is still allowed to walk away from. */
-const CANCELLABLE: RideRequestStatus[] = ['requested', 'matched'];
+const CANCELLABLE: RideRequestStatus[] = ["requested", "matched"];
 
 type RideRequestStatus = typeof rideRequests.$inferSelect.status;
 
@@ -82,7 +49,8 @@ async function cancelWithin(
    */
   for (let attempt = 0; attempt < 2; attempt++) {
     const snapshot = await readRequest(requestId, passengerId, tx);
-    if (!snapshot) throw new AppError(404, 'No such request for you', 'REQUEST_NOT_FOUND');
+    if (!snapshot)
+      throw new AppError(404, "No such request for you", "REQUEST_NOT_FOUND");
 
     if (snapshot.poolId === null) {
       // No pool, so no ordering constraint, and nothing to detach from or re-price.
@@ -92,7 +60,8 @@ async function cancelWithin(
     // Pool first, then the request: the same order `transitionPool` uses.
     await lockPool(snapshot.poolId, tx);
     const locked = await lockRequest(requestId, passengerId, tx);
-    if (!locked) throw new AppError(404, 'No such request for you', 'REQUEST_NOT_FOUND');
+    if (!locked)
+      throw new AppError(404, "No such request for you", "REQUEST_NOT_FOUND");
 
     // The pool appeared or changed between the read and the lock. Retry once, and the
     // second pass takes whichever branch matches the row it can actually see.
@@ -108,31 +77,45 @@ async function cancelWithin(
    */
   throw new AppError(
     409,
-    'This request is being matched right now. Try cancelling again in a moment.',
-    'REQUEST_CHANGING',
+    "This request is being matched right now. Try cancelling again in a moment.",
+    "REQUEST_CHANGING",
   );
 }
 
 /** Ownership is part of the lookup, so this doubles as the 404 for someone else's id. */
-async function readRequest(requestId: string, passengerId: string, tx: DbExecutor) {
+async function readRequest(
+  requestId: string,
+  passengerId: string,
+  tx: DbExecutor,
+) {
   const [row] = await tx
     .select()
     .from(rideRequests)
     .where(
-      and(eq(rideRequests.id, requestId), eq(rideRequests.passengerId, passengerId)),
+      and(
+        eq(rideRequests.id, requestId),
+        eq(rideRequests.passengerId, passengerId),
+      ),
     )
     .limit(1);
   return row ?? null;
 }
 
-async function lockRequest(requestId: string, passengerId: string, tx: DbExecutor) {
+async function lockRequest(
+  requestId: string,
+  passengerId: string,
+  tx: DbExecutor,
+) {
   const [row] = await tx
     .select()
     .from(rideRequests)
     .where(
-      and(eq(rideRequests.id, requestId), eq(rideRequests.passengerId, passengerId)),
+      and(
+        eq(rideRequests.id, requestId),
+        eq(rideRequests.passengerId, passengerId),
+      ),
     )
-    .for('update')
+    .for("update")
     .limit(1);
   return row ?? null;
 }
@@ -144,7 +127,7 @@ async function lockPool(poolId: string, tx: DbExecutor) {
     .where(eq(pools.id, poolId))
     // `of: pools` so this contends only with other pool writers, not with a driver
     // toggling their own profile.
-    .for('update', { of: pools })
+    .for("update", { of: pools })
     .limit(1);
 }
 
@@ -161,7 +144,7 @@ async function cancelUnmatched(
 ): Promise<RideRequestStatus> {
   const updated = await tx
     .update(rideRequests)
-    .set({ status: 'cancelled', updatedAt: sql`now()` })
+    .set({ status: "cancelled", updatedAt: sql`now()` })
     .where(
       and(
         eq(rideRequests.id, request.id),
@@ -212,14 +195,14 @@ async function cancelMatched(
   if (!CANCELLABLE.includes(pool.status as RideRequestStatus)) {
     throw new AppError(
       409,
-      'This ride has already started, so it can no longer be cancelled.',
-      'REQUEST_NOT_CANCELLABLE',
+      "This ride has already started, so it can no longer be cancelled.",
+      "REQUEST_NOT_CANCELLABLE",
     );
   }
 
   const cancelled = await tx
     .update(rideRequests)
-    .set({ status: 'cancelled', updatedAt: sql`now()` })
+    .set({ status: "cancelled", updatedAt: sql`now()` })
     .where(
       and(
         eq(rideRequests.id, request.id),
@@ -257,7 +240,7 @@ async function cancelMatched(
   if (remaining === 0) {
     await tx
       .update(pools)
-      .set({ status: 'cancelled', updatedAt: sql`now()` })
+      .set({ status: "cancelled", updatedAt: sql`now()` })
       .where(eq(pools.id, poolId));
   }
 
@@ -278,18 +261,18 @@ async function lockPoolForUpdate(poolId: string, tx: DbExecutor) {
     .from(pools)
     .innerJoin(vehicles, eq(vehicles.id, pools.vehicleId))
     .where(eq(pools.id, poolId))
-    .for('update', { of: pools })
+    .for("update", { of: pools })
     .limit(1);
   return row ?? null;
 }
 
 function notCancellable(current: string) {
-  const terminal = current === 'completed' || current === 'cancelled';
+  const terminal = current === "completed" || current === "cancelled";
   return new AppError(
     409,
     terminal
       ? `This ride is already ${current}, so it cannot be cancelled.`
-      : 'This ride has already started, so it can no longer be cancelled.',
-    'REQUEST_NOT_CANCELLABLE',
+      : "This ride has already started, so it can no longer be cancelled.",
+    "REQUEST_NOT_CANCELLABLE",
   );
 }
