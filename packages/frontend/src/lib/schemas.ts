@@ -113,3 +113,34 @@ export function profilePayload(values: ProfileInput): {
     avatarUrl: values.avatarUrl === '' ? null : values.avatarUrl,
   }
 }
+
+/*
+ * Picking a pickup and a destination. Both hold a location id, never a name, because
+ * `ride_requests` stores foreign keys and a name would let a display string and a stored
+ * reference disagree.
+ *
+ * The empty string is the "not chosen yet" state. `''` is not a valid uuid, so the
+ * non-empty check is enough to keep it out of the payload.
+ */
+export const rideRequestSchema = z
+  .object({
+    pickupLocationId: z.string().trim().min(1, 'Choose where you are'),
+    destinationLocationId: z.string().trim().min(1, 'Choose where you are going'),
+    // A number rather than the string a `<select>` hands back, matching the backend's
+    // `z.number().int()`. `z.coerce.number()` would also accept the empty string as 0,
+    // which fails the `min(1)` below with a confusing "Expected number" message.
+    seatsRequested: z
+      .number({ message: 'Choose how many seats' })
+      .int('Seats must be a whole number')
+      .min(1, 'At least one seat')
+      .max(4, 'At most four seats'),
+  })
+  // Mirrors the `ride_requests_pickup_differs_from_destination` check constraint. The
+  // message is attached to the destination so it appears under the second field, which
+  // is the one that was wrong.
+  .refine((value) => value.pickupLocationId !== value.destinationLocationId, {
+    message: 'Choose a destination different from your pickup',
+    path: ['destinationLocationId'],
+  })
+
+export type RideRequestInput = z.infer<typeof rideRequestSchema>

@@ -4,6 +4,7 @@ import { AppError } from '../../common/errors/app-error';
 import { isUniqueViolation } from '../../common/errors/db-errors';
 import type { DriverStatus } from '../../common/types/auth.types';
 import { usersService } from '../users/users.service';
+import { runMatching } from '../ride-requests/ride.matching';
 import { driversRepository } from './drivers.repository';
 
 const alreadyDriver = () =>
@@ -72,16 +73,39 @@ export const driversService = {
   },
 
   /**
-   * The driver says whether they are working right now. Purely their own column: an
-   * admin changing `status` does not touch it, and vice versa.
+   * The driver says whether they are working right now, and where. Purely their own
+   * columns: an admin changing `status` does not touch them, and vice versa.
+   *
+   * `currentZoneId` is required to go online and ignored to go offline. It cannot be
+   * optional when online: matching measures a driver's distance to a pool's pickup from
+   * this column, and an online driver with no zone is a candidate query that returns
+   * nobody -- the driver would sit in the "working" state and never be offered anything,
+   * with nothing on screen to explain why. Failing loudly here is better.
    *
    * The "needs an active vehicle" rule is not checked here. It spans two modules and
    * `vehicles` already depends on `drivers`, so `drivers` cannot import `vehicles`; the
    * controller is the only layer that sees both. See drivers.controller.setOnline.
+   *
+   * Going online runs matching afterwards, and deliberately outside this call's
+   * transaction. Matching writes to `ride_requests` and `pools` and takes its own
+   * transaction; nesting it inside the driver's write would hold that transaction open
+   * for the whole scan of open requests for no benefit. A matching failure must not undo
+   * the driver coming online -- the driver is genuinely online, and their next request
+   * or the next poll will retry matching -- so the error is logged, not propagated.
    */
-  async setOnline(userId: string, isOnline: boolean) {
-    const profile = await driversRepository.setOnline(userId, isOnline);
+  async setOnline(userId: string, isOnline: boolean, currentZoneId: string | null) {
+    const profile = await driversRepository.setOnline(userId, isOnline, currentZoneId);
     if (!profile) throw notADriver();
+
+    if (isOnline) {
+      try {
+        const summary = await runMatching();
+        console.log('[matching] after driver came online', summary);
+      } catch (err) {
+        console.error('[matching] failed after driver came online', err);
+      }
+    }
+
     return profile;
   },
 };

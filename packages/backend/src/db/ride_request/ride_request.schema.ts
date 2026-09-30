@@ -1,5 +1,5 @@
 import { uuid, integer, timestamp } from 'drizzle-orm/pg-core/columns';
-import { pgTable, pgEnum, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, index, uniqueIndex, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { users } from '../user/users.schema';
 import { pools } from '../pool/pool.schema';
@@ -59,6 +59,24 @@ export const rideRequests = pgTable(
     index('ride_requests_open_idx')
       .on(t.createdAt)
       .where(sql`${t.status} = 'requested'`),
+
+    /*
+     * One live trip per passenger.
+     *
+     * Partial, so it only constrains the states in which a trip is still under way. A
+     * passenger's finished and cancelled requests stay in the table as history, and
+     * without the `where` clause this index would cap them at one row for the rest of
+     * their life.
+     *
+     * The service checks this rule before inserting so the passenger gets an explanation
+     * rather than an error, but the check has a window between the read and the write in
+     * which two simultaneous taps -- or the same request retried after a timeout -- would
+     * both pass it. This index is what closes that window, and it is the authority: the
+     * service's answer is a courtesy, this is the rule.
+     */
+    uniqueIndex('ride_requests_one_live_per_passenger')
+      .on(t.passengerId)
+      .where(sql`${t.status} in ('requested', 'matched', 'in_progress')`),
     check('ride_requests_seats_positive', sql`${t.seatsRequested} >= 1`),
     check('ride_requests_fare_not_negative', sql`${t.fareAmount} >= 0`),
     // A trip that starts and ends in the same place is always a bug, and it is one the

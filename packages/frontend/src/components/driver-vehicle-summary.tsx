@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 
-import { vehiclesApi } from '@/lib/api'
-import { ApiError, type Vehicle } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { vehiclesApi } from "@/lib/api";
+import { isNotFoundError, retryTransientError } from "@/lib/query";
+import { ApiError, type Vehicle } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -12,8 +13,8 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * The dashboard's read-only view of the driver's vehicle. Shares the `['vehicle']`
@@ -22,19 +23,17 @@ import { Skeleton } from '@/components/ui/skeleton'
  */
 export function DriverVehicleSummary() {
   const vehicle = useQuery<Vehicle>({
-    queryKey: ['vehicle'],
+    queryKey: ["vehicle"],
     queryFn: vehiclesApi.get,
-    // 404 is the "not registered yet" answer, not a failure worth retrying.
-    retry: (failureCount, error) => {
-      if (error instanceof ApiError && error.status >= 400 && error.status < 500) return false
-      return failureCount < 2
-    },
-  })
+    retry: retryTransientError,
+  });
 
-  const notRegistered =
-    vehicle.isError && vehicle.error instanceof ApiError && vehicle.error.status === 404
+  const notRegistered = vehicle.isError && isNotFoundError(vehicle.error);
 
-  const registered = !vehicle.isLoading && !notRegistered && !vehicle.isError ? vehicle.data : null
+  const registered =
+    !vehicle.isLoading && !notRegistered && !vehicle.isError
+      ? vehicle.data
+      : null;
 
   return (
     <Card>
@@ -42,15 +41,15 @@ export function DriverVehicleSummary() {
         <div className="flex items-center justify-between gap-3">
           <CardTitle>Vehicle</CardTitle>
           {registered && (
-            <Badge variant={registered.isActive ? 'default' : 'secondary'}>
-              {registered.isActive ? 'Active' : 'Removed'}
+            <Badge variant={registered.isActive ? "default" : "secondary"}>
+              {registered.isActive ? "Active" : "Removed"}
             </Badge>
           )}
         </div>
         <CardDescription>
           {notRegistered
-            ? 'You have no vehicle yet, so you cannot go online.'
-            : 'You can register one vehicle, with up to 4 seats.'}
+            ? "You have no vehicle yet, so you cannot go online."
+            : "You can register one vehicle, with up to 4 seats."}
         </CardDescription>
       </CardHeader>
 
@@ -60,8 +59,8 @@ export function DriverVehicleSummary() {
         ) : registered ? (
           <p className="text-sm">
             <span className="font-medium">
-              {registered.seats} {registered.seats === 1 ? 'seat' : 'seats'}
-            </span>{' '}
+              {registered.seats} {registered.seats === 1 ? "seat" : "seats"}
+            </span>{" "}
             <span className="text-muted-foreground">registered</span>
           </p>
         ) : notRegistered ? (
@@ -69,8 +68,8 @@ export function DriverVehicleSummary() {
         ) : (
           <p role="alert" className="text-destructive text-sm">
             {vehicle.error instanceof ApiError && vehicle.error.status === 403
-              ? 'Your driver account is not approved yet.'
-              : 'Could not load your vehicle.'}
+              ? "Your driver account is not approved yet."
+              : "Could not load your vehicle."}
           </p>
         )}
       </CardContent>
@@ -78,10 +77,10 @@ export function DriverVehicleSummary() {
       <CardFooter>
         <Button variant="outline" size="sm" asChild>
           <Link to="/driver/vechile">
-            {notRegistered ? 'Register vehicle' : 'Manage vehicle'}
+            {notRegistered ? "Register vehicle" : "Manage vehicle"}
           </Link>
         </Button>
       </CardFooter>
     </Card>
-  )
+  );
 }
