@@ -4,13 +4,20 @@
 // driver's current zone and the pool's pickup anchor, both of which are already columns.
 // There is no `pool_offers` table, so a pool can never be offered to a driver who is out
 // of range and a driver's feed cannot go stale relative to the pools table.
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { db, type DbExecutor } from '../../db';
-import { driverProfiles, locations, pools, rideRequests, vehicles } from '../../db/schema';
-import { haversineKm, isWithinKm } from '../../common/geo/distance';
-import { MAX_JOIN_DISTANCE_KM } from './ride.fare';
-import { transitionPool, type DriverPoolAction } from './ride.pool';
-import { AppError } from '../../common/errors/app-error';
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { db, type DbExecutor } from "../../db";
+import {
+  driverProfiles,
+  locations,
+  pools,
+  rideRequests,
+  users,
+  vehicles,
+} from "../../db/schema";
+import { haversineKm, isWithinKm } from "../../common/geo/distance";
+import { MAX_JOIN_DISTANCE_KM } from "./ride.fare";
+import { transitionPool, type DriverPoolAction } from "./ride.pool";
+import { AppError } from "../../common/errors/app-error";
 
 /**
  * The driver's current feed: live pools whose pickup is within range of where they are.
@@ -20,18 +27,28 @@ import { AppError } from '../../common/errors/app-error';
  */
 export async function feedForDriver(driverUserId: string, ex: DbExecutor = db) {
   const [driver] = await ex
-    .select({ currentZoneId: driverProfiles.currentZoneId, isOnline: driverProfiles.isOnline })
+    .select({
+      currentZoneId: driverProfiles.currentZoneId,
+      isOnline: driverProfiles.isOnline,
+    })
     .from(driverProfiles)
     .where(eq(driverProfiles.userId, driverUserId))
     .limit(1);
 
-  if (!driver) throw new AppError(404, 'You are not registered as a driver', 'NOT_A_DRIVER');
+  if (!driver)
+    throw new AppError(
+      404,
+      "You are not registered as a driver",
+      "NOT_A_DRIVER",
+    );
   if (!driver.isOnline || !driver.currentZoneId) return [];
 
   const [vehicle] = await ex
     .select({ id: vehicles.id, seats: vehicles.seats })
     .from(vehicles)
-    .where(and(eq(vehicles.driverId, driverUserId), eq(vehicles.isActive, true)))
+    .where(
+      and(eq(vehicles.driverId, driverUserId), eq(vehicles.isActive, true)),
+    )
     .limit(1);
   if (!vehicle) return [];
 
@@ -61,7 +78,7 @@ export async function feedForDriver(driverUserId: string, ex: DbExecutor = db) {
          *
          * The 3 km filter below then narrows this to offers the driver can actually reach.
          */
-        eq(pools.status, 'matched'),
+        eq(pools.status, "matched"),
         /*
          * A driver's own pool is not an offer to them. `pools_one_open_per_vehicle`
          * already keeps a vehicle to one live pool, but it says nothing about who may
@@ -85,17 +102,37 @@ export async function feedForDriver(driverUserId: string, ex: DbExecutor = db) {
    * Moving the threshold into SQL would mean the rule exists twice.
    */
   const nearby = candidates.filter((pool) =>
-    isWithinKm(driverZone, { lat: pool.pickupLat, lng: pool.pickupLng }, MAX_JOIN_DISTANCE_KM),
+    isWithinKm(
+      driverZone,
+      { lat: pool.pickupLat, lng: pool.pickupLng },
+      MAX_JOIN_DISTANCE_KM,
+    ),
   );
 
   return Promise.all(
     nearby.map(async (pool) => {
       const members = await ex
-        .select({ id: rideRequests.id, seatsRequested: rideRequests.seatsRequested })
+        .select({
+          id: rideRequests.id,
+          passengerName: users.fullName,
+          seatsRequested: rideRequests.seatsRequested,
+          fareAmount: rideRequests.fareAmount,
+          destinationLocationId: rideRequests.destinationLocationId,
+        })
         .from(rideRequests)
+        .innerJoin(users, eq(users.id, rideRequests.passengerId))
         .where(eq(rideRequests.poolId, pool.id));
 
       const destination = await areaFor(pool.destinationLocationId, ex);
+      const requests = await Promise.all(
+        members.map(async (member) => ({
+          id: member.id,
+          passengerName: member.passengerName,
+          seatsRequested: member.seatsRequested,
+          fareAmount: member.fareAmount,
+          destinationName: await nameFor(member.destinationLocationId, ex),
+        })),
+      );
 
       return {
         id: pool.id,
@@ -103,10 +140,16 @@ export async function feedForDriver(driverUserId: string, ex: DbExecutor = db) {
         pickupName: await nameFor(pool.pickupLocationId, ex),
         destinationName: await nameFor(pool.destinationLocationId, ex),
         /** Km, so the UI can show "1.2 km away" without re-deriving the radius. */
-        distanceKm: Number(haversineKm(driverZone, { lat: pool.pickupLat, lng: pool.pickupLng }).toFixed(2)),
+        distanceKm: Number(
+          haversineKm(driverZone, {
+            lat: pool.pickupLat,
+            lng: pool.pickupLng,
+          }).toFixed(2),
+        ),
         currentAvailableSeats: pool.currentAvailableSeats,
         passengerCount: members.length,
         seatsWanted: members.reduce((sum, m) => sum + m.seatsRequested, 0),
+        requests,
         createdAt: pool.createdAt,
         destinationLat: destination?.lat ?? null,
         destinationLng: destination?.lng ?? null,
@@ -116,11 +159,16 @@ export async function feedForDriver(driverUserId: string, ex: DbExecutor = db) {
 }
 
 /** The driver's own active trip, across every state from `matched` to `started`. */
-export async function currentTripForDriver(driverUserId: string, ex: DbExecutor = db) {
+export async function currentTripForDriver(
+  driverUserId: string,
+  ex: DbExecutor = db,
+) {
   const [vehicle] = await ex
     .select({ id: vehicles.id })
     .from(vehicles)
-    .where(and(eq(vehicles.driverId, driverUserId), eq(vehicles.isActive, true)))
+    .where(
+      and(eq(vehicles.driverId, driverUserId), eq(vehicles.isActive, true)),
+    )
     .limit(1);
   if (!vehicle) return null;
 
@@ -130,7 +178,12 @@ export async function currentTripForDriver(driverUserId: string, ex: DbExecutor 
     .where(
       and(
         eq(pools.vehicleId, vehicle.id),
-        inArray(pools.status, ['matched', 'accepted', 'driver_arrived', 'started']),
+        inArray(pools.status, [
+          "matched",
+          "accepted",
+          "driver_arrived",
+          "started",
+        ]),
       ),
     )
     .orderBy(asc(pools.createdAt))
@@ -138,9 +191,26 @@ export async function currentTripForDriver(driverUserId: string, ex: DbExecutor 
   if (!pool) return null;
 
   const members = await ex
-    .select()
+    .select({
+      id: rideRequests.id,
+      passengerName: users.fullName,
+      seatsRequested: rideRequests.seatsRequested,
+      fareAmount: rideRequests.fareAmount,
+      destinationLocationId: rideRequests.destinationLocationId,
+    })
     .from(rideRequests)
+    .innerJoin(users, eq(users.id, rideRequests.passengerId))
     .where(eq(rideRequests.poolId, pool.id));
+
+  const requests = await Promise.all(
+    members.map(async (member) => ({
+      id: member.id,
+      passengerName: member.passengerName,
+      seatsRequested: member.seatsRequested,
+      fareAmount: member.fareAmount,
+      destinationName: await nameFor(member.destinationLocationId, ex),
+    })),
+  );
 
   return {
     id: pool.id,
@@ -149,6 +219,7 @@ export async function currentTripForDriver(driverUserId: string, ex: DbExecutor 
     destinationName: await nameFor(pool.destinationLocationId, ex),
     currentAvailableSeats: pool.currentAvailableSeats,
     passengers: members.length,
+    requests,
     createdAt: pool.createdAt,
   };
 }
