@@ -1,11 +1,11 @@
-import { AppError } from '../../common/errors/app-error';
-import { uniqueConstraintName } from '../../common/errors/db-errors';
-import type { DbExecutor } from '../../db';
-import { rideRequestsRepository } from './ride-requests.repository';
-import { runMatching } from './ride.matching';
-import { currentTripForDriver, feedForDriver } from './ride.driver';
-import { cancelRequest } from './ride.cancel';
-import type { CreateRideRequestInput } from './ride-requests.validation';
+import { AppError } from "../../common/errors/app-error";
+import { uniqueConstraintName } from "../../common/errors/db-errors";
+import type { DbExecutor } from "../../db";
+import { rideRequestsRepository } from "./ride-requests.repository";
+import { runMatching } from "./ride.matching";
+import { currentTripForDriver, feedForDriver } from "./ride.driver";
+import { cancelRequest } from "./ride.cancel";
+import type { CreateRideRequestInput } from "./ride-requests.validation";
 
 /**
  * Turns a submission into a waiting request.
@@ -18,7 +18,11 @@ import type { CreateRideRequestInput } from './ride-requests.validation';
  * a pool. The passenger is not charged, or quoted, a price at submission.
  */
 export const rideRequestsService = {
-  async create(passengerId: string, input: CreateRideRequestInput, ex?: DbExecutor) {
+  async create(
+    passengerId: string,
+    input: CreateRideRequestInput,
+    ex?: DbExecutor,
+  ) {
     /*
      * Checked up front so an unknown area id produces a 422 naming the field, instead of
      * the foreign key rejecting the insert and surfacing as a 500. Both ids are looked up
@@ -26,11 +30,14 @@ export const rideRequestsService = {
      * area exist" twice.
      */
     const wanted = [input.pickupLocationId, input.destinationLocationId];
-    const existing = await rideRequestsRepository.existingLocationIds(wanted, ex);
+    const existing = await rideRequestsRepository.existingLocationIds(
+      wanted,
+      ex,
+    );
 
     for (const id of wanted) {
       if (!existing.includes(id)) {
-        throw new AppError(422, 'Unknown area', 'LOCATION_NOT_FOUND');
+        throw new AppError(422, "Unknown area", "LOCATION_NOT_FOUND");
       }
     }
 
@@ -44,12 +51,15 @@ export const rideRequestsService = {
      * 500. So the check is the courtesy and the index is the rule, and the catch below
      * covers the window between the two.
      */
-    const live = await rideRequestsRepository.findLiveByPassenger(passengerId, ex);
+    const live = await rideRequestsRepository.findLiveByPassenger(
+      passengerId,
+      ex,
+    );
     if (live) {
       throw new AppError(
         409,
-        'You already have a ride in progress. Finish or cancel it before booking another.',
-        'RIDE_ALREADY_IN_PROGRESS',
+        "You already have a ride in progress. Finish or cancel it before booking another.",
+        "RIDE_ALREADY_IN_PROGRESS",
       );
     }
 
@@ -80,17 +90,20 @@ export const rideRequestsService = {
        * rule, same answer as the check produced -- the caller cannot tell the two apart
        * and should not have to.
        */
-      if (uniqueConstraintName(err) === 'ride_requests_one_live_per_passenger') {
+      if (
+        uniqueConstraintName(err) === "ride_requests_one_live_per_passenger"
+      ) {
         throw new AppError(
           409,
-          'You already have a ride in progress. Finish or cancel it before booking another.',
-          'RIDE_ALREADY_IN_PROGRESS',
+          "You already have a ride in progress. Finish or cancel it before booking another.",
+          "RIDE_ALREADY_IN_PROGRESS",
         );
       }
       throw err;
     }
 
-    if (!row) throw new AppError(500, 'Could not create the request', 'CREATE_FAILED');
+    if (!row)
+      throw new AppError(500, "Could not create the request", "CREATE_FAILED");
 
     const areas = await rideRequestsRepository.findAreaNames(wanted, ex);
     const nameById = new Map(areas.map((a) => [a.id, a.name]));
@@ -116,9 +129,10 @@ export const rideRequestsService = {
      */
     try {
       const summary = await runMatching(ex);
-      if (summary.considered > 0) console.log('[matching] after new request', summary);
+      if (summary.considered > 0)
+        console.log("[matching] after new request", summary);
     } catch (err) {
-      console.error('[matching] failed after new request', err);
+      console.error("[matching] failed after new request", err);
     }
 
     return response;
@@ -139,7 +153,7 @@ export const rideRequestsService = {
    */
   async cancel(passengerId: string, requestId: string) {
     await cancelRequest(passengerId, requestId);
-    return { id: requestId, status: 'cancelled' as const };
+    return { id: requestId, status: "cancelled" as const };
   },
 
   async listMine(passengerId: string) {
@@ -155,6 +169,16 @@ export const rideRequestsService = {
    * and relying on the driver to notice that the two are incompatible.
    */
   async driverFeed(driverUserId: string) {
+    // Retry pending matches when the driver polls, so a transient matching failure does
+    // not leave an online driver waiting until another booking or availability change.
+    try {
+      const summary = await runMatching();
+      if (summary.considered > 0)
+        console.log("[matching] before driver feed", summary);
+    } catch (err) {
+      console.error("[matching] failed before driver feed", err);
+    }
+
     const [offers, currentTrip] = await Promise.all([
       feedForDriver(driverUserId),
       currentTripForDriver(driverUserId),
