@@ -237,6 +237,70 @@ Changing the JWT claim from `roles: [...]` to `role` invalidates every access to
 already issued, so everyone re-logs-in once. The `payloadSchema` in `authenticate`
 deliberately does not accept the old array shape, so no legacy path is left behind.
 
+## Rides
+
+`pools_and_ride_requests` added the first three tables of the ride domain. Nothing reads
+or writes them yet — the passenger and driver request pages are still placeholders.
+
+| Table | One row is |
+| --- | --- |
+| `locations` | a curated Dhaka area, so a trip's endpoints need no map or geocoding API |
+| `pools` | one physical journey by one vehicle, shared by several passengers |
+| `ride_requests` | one passenger's booking, carrying the fare and seat count |
+
+A `pools` row is the vehicle's journey; a `ride_requests` row is a passenger's place in
+one. `ride_requests.pool_id` is null only while a request is still unmatched, which the
+`ride_requests_requested_has_no_pool` check enforces so matching code cannot leave a pool
+counting a passenger who never got a seat.
+
+`pools.current_available_seats` is `vehicles.seats` minus the seats taken by the requests
+attached to the pool. It is stored rather than summed per read because "does this open
+pool still have room" is the hot path of matching, and it must be written in the same
+transaction that changes a request's status.
+
+**Money is an integer of poisha**, the 1/100th of a Taka, so 100 is ৳1.00. A pool's fare
+is split between its passengers, and dividing floating point money accumulates rounding
+error that passengers end up overpaying; splitting an integer is exact and always sums
+back to the original.
+
+Two judgement calls worth knowing:
+
+- **`matched_accepted` is one state.** The spec wrote the first pool state as
+  "MATCHED/ACCEPTED", which left it open whether a match finishes on assignment or only
+  once the driver accepts. It is modelled as one state so a driver is never silently
+  treated as having accepted. Splitting it into `matched` + `accepted` later is a one-line
+  enum change.
+- **No "one open request per passenger" constraint.** Whether a passenger may hold
+  several unmatched requests at once is a product decision, not a database one, so it is
+  deliberately absent. Add it when the rule is decided.
+
+`lat`/`lng` are `double precision`, not `numeric`: a coordinate is a measurement that is
+never summed or split, so a float is accurate enough and cheaper to index. The integer rule
+applies to money only.
+
+## Migration bookkeeping
+
+drizzle 1.0-rc has no `meta/_journal.json`. `drizzle-kit generate` diffs the schema files
+against the newest `snapshot.json`, and `drizzle-kit migrate` reads every
+`drizzle/*/migration.sql` and skips the ones already named in `drizzle.__drizzle_migrations`.
+
+Migrations 1–5 were applied by hand, so that table did not exist and `db:migrate` tried to
+replay all of them, dying at `single_role_per_user` on the `users.role` column that
+already existed. The batch runs in one transaction, so it rolled back and changed nothing.
+`src/scripts/record-hand-applied-migrations.ts` inserted the five missing names — it
+creates only the bookkeeping table, and hashes and timestamps match what drizzle writes
+itself. The snapshot in `pools_and_ride_requests` is the post-single-role state, which
+repairs the chain for every later migration.
+
+Two consequences worth remembering:
+
+- **A hand-applied migration must be recorded, or `db:migrate` will replay it.** Prefer
+  `bun run db:migrate` from now on.
+- **A migration folder without a `snapshot.json` breaks the next `generate`**, which
+  silently re-emits everything that folder did. `db:generate` printed
+  `DROP TABLE "user_roles"` and `ADD COLUMN "role"` in that situation; those statements
+  were removed by hand, with a comment in the SQL saying why.
+
 ## Architecture
 
 Each module (`auth`, `users`, `drivers`, `vehicles`) is split into the same layers:
