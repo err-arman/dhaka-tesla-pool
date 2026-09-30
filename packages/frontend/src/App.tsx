@@ -10,9 +10,12 @@ import {
   RequireDriver,
 } from '@/hooks/use-guarded-route'
 import { DriverLayout } from '@/components/driver-layout'
+import { PassengerLayout } from '@/components/passenger-layout'
 import SigninPage from '@/pages/signin'
 import SignupPage from '@/pages/signup'
-import PassengerPage from '@/pages/passenger'
+import PassengerIndexPage from '@/pages/passenger'
+import PassengerProfilePage from '@/pages/passenger/profile'
+import PassengerRequestPage from '@/pages/passenger/request'
 import DriverIndexPage from '@/pages/driver'
 import DriverDashboardPage from '@/pages/driver/dashboard'
 import DriverVehiclePage from '@/pages/driver/vechile'
@@ -53,15 +56,23 @@ export default function App() {
               }
             />
 
-            {/* Post-auth landing pages. Still placeholders. */}
+            {/*
+              The passenger area is its own shell, same shape as the driver one. It is
+              gated on a session only and not on a role, because `homePathFor` sends
+              every non-driver here, admins included.
+            */}
             <Route
               path="/passenger"
               element={
                 <RequireAuth>
-                  <PassengerPage />
+                  <PassengerLayout />
                 </RequireAuth>
               }
-            />
+            >
+              <Route index element={<PassengerIndexPage />} />
+              <Route path="profile" element={<PassengerProfilePage />} />
+              <Route path="request" element={<PassengerRequestPage />} />
+            </Route>
             {/* The driver area is its own shell: sidebar, header and nested routes. */}
             <Route
               path="/driver"

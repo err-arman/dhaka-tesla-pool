@@ -45,21 +45,21 @@ falling back to 5174 will be blocked by CORS.
 
 ## Routes
 
-| Route        | Access                                                     |
-| ------------ | ---------------------------------------------------------- |
-| `/signin`    | public, redirects to the role's own page when signed in     |
-| `/signup`    | public, redirects when signed in; sends the chosen role      |
-| `/`          | lands on `/driver` or `/passenger` by the user's own role   |
-| `/passenger` | requires a session; the landing page for non-drivers         |
-| `/driver/*`  | requires a session **and** the `driver` role                 |
+| Route          | Access                                                    |
+| -------------- | --------------------------------------------------------- |
+| `/signin`      | public, redirects to the role's own page when signed in   |
+| `/signup`      | public, redirects when signed in; sends the chosen role   |
+| `/`            | lands on `/driver` or `/passenger` by the user's own role |
+| `/passenger/*` | requires a session; the landing area for non-drivers      |
+| `/driver/*`    | requires a session **and** the `driver` role              |
 
 Landing and gating both come from the role the server returned, not from UI state.
 `lib/roles.ts` holds the two helpers: `isDriver(role)` and `homePathFor(role)`.
 
-`/passenger` is still a placeholder, so `/signin` and `/signup` are the only fully built
-passenger-side screens. The whole driver area is built out; see Driver area below. The
-one component left unimported is `apply-to-drive`, which belongs on `/passenger` and is
-waiting for that page to be built.
+`/signin` and `/signup` are the only screens that are not inside a portal. Both the
+driver and the passenger areas are built out; see the two sections below. Every page
+component and every feature component is imported somewhere — the only unimported files
+are the unused `separator` primitive and `vite-env.d.ts`.
 
 ## Structure
 
@@ -69,7 +69,8 @@ src/
   hooks/           useAuth, route guards
   lib/             api client, zod schemas, types, roles, cn()
   pages/driver/    index (redirect), dashboard, vechile, incoming-request, settings
-  pages/           signin, signup, passenger
+  pages/passenger/ index (redirect), profile, request
+  pages/           signin, signup
   providers/       auth context and provider
 ```
 
@@ -82,7 +83,7 @@ bun run lint      # eslint
 bun run preview   # serve the production build
 ```
 
-## Driver area
+## Role selection
 
 `/signin` and `/signup` both have a Passenger | Driver tab, but only one of them
 grants anything:
@@ -118,7 +119,7 @@ ordering.
 An `admin` is not a driver, so `homePathFor('admin')` returns `/passenger`. Admins have no
 portal of their own yet.
 
-### Driver area
+## Driver area
 
 `DriverLayout` is the shell: a fixed left sidebar, a header, and an `<Outlet />`. It
 renders only for a driver, because `RequireDriver` wraps the whole route. The four nav
@@ -150,10 +151,39 @@ The sidebar is `hidden md:flex`, so below `md` the nav moves into a scrollable h
 — four labels do not fit a phone, and the row scrolls sideways rather than wrapping the
 header onto a second line.
 
+## Passenger area
+
+`PassengerLayout` is the same shell as the driver one — sidebar, header, `<Outlet />` —
+and is a separate component on purpose rather than a shared shell parameterised by nav
+items. Two nav items:
+
+| Route                  | Page                    | Shows                                     |
+| ---------------------- | ----------------------- | ----------------------------------------- |
+| `/passenger/profile`   | `PassengerProfilePage`  | read-only summary, edit form, apply, delete |
+| `/passenger/request`   | `PassengerRequestPage`  | placeholder, no backend yet               |
+
+`/passenger` is the layout, not a page, so it redirects to `/passenger/profile`, and it
+is where `homePathFor` sends a passenger — and an `admin`, who is not a driver.
+
+**The passenger area is not role-gated.** It is wrapped in `RequireAuth` only, because
+`homePathFor` deliberately routes every non-driver here. A driver who types
+`/passenger/profile` by hand is not turned away; the driver area is the one that is
+closed to non-drivers, and `RequireDriver` is the only role guard that exists.
+
+The profile page is deliberately a summary *and* a form, in that order. `ProfileForm` can
+only edit the three fields the backend accepts, and email is absent from
+`updateProfileSchema` entirely because changing it needs a verification flow. The
+read-only `Card` above it is therefore the only place a passenger can see their own
+email or role. `PublicUser` has no `createdAt`, so there is no join date to show.
+
+`ApplyToDrive` and `DeleteAccount` are rendered at the foot of the profile page. This is
+the only area a passenger can reach, so it is where the apply CTA belongs.
+
 A passenger signs up as a passenger and becomes a driver later with the Apply button
-(`POST /drivers/apply`) in `ApplyToDrive`, which is rendered on `/passenger` rather than
-in the driver area for exactly the gating reason above. Applying **replaces** the role in
-one transaction and refetches the user, so the next visit to `/` lands on `/driver`.
+(`POST /drivers/apply`) in `ApplyToDrive`, which lives on the passenger profile page
+rather than in the driver area for exactly the gating reason above. Applying **replaces**
+the role in one transaction and refetches the user, so the next visit to `/` lands on
+`/driver`.
 
 A driver has at most one active vehicle, so `VehicleCard` renders a single vehicle
 rather than a list. A `404` from `GET /vehicles` means "not registered yet" and
@@ -189,6 +219,12 @@ user already lands:
   column default.
 
 ## Not built yet
+
+Ride requests. Both the passenger `/passenger/request` page and the driver
+`/driver/incoming-request` twin are placeholders, and they are placeholders in the same
+way: there is no ride, dispatch or payment domain in the backend at all, so there is
+nothing to list, send, accept or price. Both pages say so instead of rendering invented
+rows.
 
 Password reset, email verification and change-password. There are no routes, tables
 or tokens for any of them, so a user who forgets their password is locked out.
