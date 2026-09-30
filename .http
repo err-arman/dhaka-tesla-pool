@@ -1,0 +1,234 @@
+@baseUrl = http://localhost:8080/api/v1
+@passengerEmail = passenger@example.com
+@passengerPassword = Password123
+@driverEmail = driver@example.com
+@driverPassword = Password123
+
+### Health
+GET http://localhost:8080/api/v1/health
+
+### Sign up as passenger
+# @name signupPassenger
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+	"fullName": "Passenger Example",
+	"email": "{{passengerEmail}}",
+	"phone": "+8801712345678",
+	"password": "{{passengerPassword}}",
+	"role": "passenger"
+}
+
+### Log in as passenger
+# @name loginPassenger
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+	"email": "{{passengerEmail}}",
+	"password": "{{passengerPassword}}"
+}
+
+###
+@passengerAccessToken = {{loginPassenger.response.body.$.accessToken}}
+@passengerRefreshToken = {{loginPassenger.response.body.$.refreshToken}}
+
+### Get current passenger
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{passengerAccessToken}}
+
+### Update passenger profile
+PATCH {{baseUrl}}/users/me
+Authorization: Bearer {{passengerAccessToken}}
+Content-Type: application/json
+
+{
+	"fullName": "Updated Passenger",
+	"phone": "+8801712345678"
+}
+
+### List locations
+# @name listLocations
+GET {{baseUrl}}/locations
+Authorization: Bearer {{passengerAccessToken}}
+
+###
+@pickupLocationId = {{listLocations.response.body.$[0].id}}
+@destinationLocationId = {{listLocations.response.body.$[1].id}}
+
+### Create ride request
+# @name createRideRequest
+POST {{baseUrl}}/ride-requests
+Authorization: Bearer {{passengerAccessToken}}
+Content-Type: application/json
+
+{
+	"pickupLocationId": "{{pickupLocationId}}",
+	"destinationLocationId": "{{destinationLocationId}}",
+	"seatsRequested": 1
+}
+
+###
+@rideRequestId = {{createRideRequest.response.body.$.id}}
+
+### List passenger ride requests
+GET {{baseUrl}}/ride-requests/mine
+Authorization: Bearer {{passengerAccessToken}}
+
+### Cancel ride request
+POST {{baseUrl}}/ride-requests/{{rideRequestId}}/cancel
+Authorization: Bearer {{passengerAccessToken}}
+
+### Refresh passenger access token
+# @name refreshPassenger
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+	"refreshToken": "{{passengerRefreshToken}}"
+}
+
+###
+@refreshedPassengerAccessToken = {{refreshPassenger.response.body.$.accessToken}}
+@refreshedPassengerRefreshToken = {{refreshPassenger.response.body.$.refreshToken}}
+
+### Log out passenger
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+
+{
+	"refreshToken": "{{refreshedPassengerRefreshToken}}"
+}
+
+### Sign up as driver
+# @name signupDriver
+POST {{baseUrl}}/auth/signup
+Content-Type: application/json
+
+{
+	"fullName": "Driver Example",
+	"email": "{{driverEmail}}",
+	"phone": "+8801812345678",
+	"password": "{{driverPassword}}",
+	"role": "driver"
+}
+
+### Log in as driver
+# @name loginDriver
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+	"email": "{{driverEmail}}",
+	"password": "{{driverPassword}}"
+}
+
+###
+@driverAccessToken = {{loginDriver.response.body.$.accessToken}}
+@driverRefreshToken = {{loginDriver.response.body.$.refreshToken}}
+@driverUserId = {{loginDriver.response.body.$.user.id}}
+
+### Get current driver profile
+GET {{baseUrl}}/drivers/me
+Authorization: Bearer {{driverAccessToken}}
+
+### Get driver's vehicle
+GET {{baseUrl}}/vehicles
+Authorization: Bearer {{driverAccessToken}}
+
+### Register or replace driver's vehicle
+# @name putVehicle
+PUT {{baseUrl}}/vehicles
+Authorization: Bearer {{driverAccessToken}}
+Content-Type: application/json
+
+{
+	"seats": 4
+}
+
+###
+@vehicleId = {{putVehicle.response.body.$.id}}
+
+### Update driver's vehicle seats
+PATCH {{baseUrl}}/vehicles
+Authorization: Bearer {{driverAccessToken}}
+Content-Type: application/json
+
+{
+	"seats": 3
+}
+
+### List locations as driver
+# @name listDriverLocations
+GET {{baseUrl}}/locations
+Authorization: Bearer {{driverAccessToken}}
+
+###
+@driverZoneId = {{listDriverLocations.response.body.$[0].id}}
+
+### Update driver status (admin token required)
+# Set this manually after obtaining an admin access token.
+@adminAccessToken = YOUR_ADMIN_ACCESS_TOKEN
+PATCH {{baseUrl}}/drivers/{{driverUserId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Content-Type: application/json
+
+{
+	"status": "approved"
+}
+
+### Set driver online
+PATCH {{baseUrl}}/drivers/me/online
+Authorization: Bearer {{driverAccessToken}}
+Content-Type: application/json
+
+{
+	"isOnline": true,
+	"currentZoneId": "{{driverZoneId}}"
+}
+
+### Get driver's ride feed
+# @name driverFeed
+GET {{baseUrl}}/ride-requests/driver/feed
+Authorization: Bearer {{driverAccessToken}}
+
+###
+@poolId = {{driverFeed.response.body.$.offers[0].id}}
+
+### Accept a pool offer
+POST {{baseUrl}}/ride-requests/pools/{{poolId}}/accept
+Authorization: Bearer {{driverAccessToken}}
+
+### Mark the pool as arrived
+POST {{baseUrl}}/ride-requests/pools/{{poolId}}/arrive
+Authorization: Bearer {{driverAccessToken}}
+
+### Start the pool trip
+POST {{baseUrl}}/ride-requests/pools/{{poolId}}/start
+Authorization: Bearer {{driverAccessToken}}
+
+### Complete the pool trip
+POST {{baseUrl}}/ride-requests/pools/{{poolId}}/complete
+Authorization: Bearer {{driverAccessToken}}
+
+### Set driver offline
+PATCH {{baseUrl}}/drivers/me/online
+Authorization: Bearer {{driverAccessToken}}
+Content-Type: application/json
+
+{
+	"isOnline": false
+}
+
+### Remove driver's vehicle
+DELETE {{baseUrl}}/vehicles
+Authorization: Bearer {{driverAccessToken}}
+
+### Log out driver
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+
+{
+	"refreshToken": "{{driverRefreshToken}}"
+}

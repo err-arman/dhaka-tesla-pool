@@ -6,8 +6,8 @@ import { email, phone, fullName } from "../../common/validation/fields";
 /*
  * The roles a client may pick for itself. `admin` is absent on purpose: signup takes
  * this from the request body, so accepting the full `role` enum would let anyone
- * promote themselves by posting {"role":"admin"}. Admins are only created by
- * `bun run make-admin`.
+ * promote themselves by posting {"role":"admin"}. Admin accounts are provisioned
+ * outside the public signup flow.
  *
  * `satisfies` is the guard, not a comment: if the database enum ever gains a value,
  * this line stops compiling and forces a decision about whether the new role is

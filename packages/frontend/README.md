@@ -16,8 +16,8 @@ via mprocs.
 
 ## Env
 
-| Variable       | Default                     | Purpose                        |
-| -------------- | --------------------------- | ------------------------------ |
+| Variable       | Default                        | Purpose                            |
+| -------------- | ------------------------------ | ---------------------------------- |
 | `VITE_API_URL` | `http://localhost:8080/api/v1` | Backend origin, `/api/v1` included |
 
 Copy `.env.example` to `.env` to change it. The backend's `CORS_ORIGINS` must list
@@ -111,12 +111,6 @@ that is not a driver is redirected to `/passenger`. `/passenger` is not gated, b
 nothing needs to keep a driver out of it — a driver with a passenger role is no longer a
 state the database can represent.
 
-`POST /drivers/apply` **replaces** `passenger` with `driver` rather than adding to it, so
-applying permanently gives up the passenger role. The one-way nature of that is the
-intended trade for now: the two portals are cleanly separate, and if a driver ever needs
-to be a passenger again, that is a deliberate role change rather than an accident of
-ordering.
-
 An `admin` is not a driver, so `homePathFor('admin')` returns `/passenger`. Admins have no
 portal of their own yet.
 
@@ -126,12 +120,12 @@ portal of their own yet.
 renders only for a driver, because `RequireDriver` wraps the whole route. The four nav
 items, in order:
 
-| Route                     | Page                     | Shows                                        |
-| ------------------------- | ------------------------ | -------------------------------------------- |
-| `/driver/dashboard`       | `DriverDashboardPage`    | availability, vehicle status, approval status |
-| `/driver/vechile`         | `DriverVehiclePage`      | register, edit seats, or remove the vehicle  |
-| `/driver/incoming-request`| `DriverRequestsPage`     | nearby offers and the current trip, with the lifecycle actions |
-| `/driver/settings`        | `DriverSettingsPage`     | profile edit and delete account              |
+| Route                      | Page                  | Shows                                                          |
+| -------------------------- | --------------------- | -------------------------------------------------------------- |
+| `/driver/dashboard`        | `DriverDashboardPage` | availability, vehicle status, approval status                  |
+| `/driver/vechile`          | `DriverVehiclePage`   | register, edit seats, or remove the vehicle                    |
+| `/driver/incoming-request` | `DriverRequestsPage`  | nearby offers and the current trip, with the lifecycle actions |
+| `/driver/settings`         | `DriverSettingsPage`  | profile edit and delete account                                |
 
 `/driver` is the layout, not a page, so it redirects to `/driver/dashboard`. That keeps
 the dashboard at one address instead of also answering to the parent, and it is where
@@ -159,7 +153,7 @@ exists. A driver's own pool is never shown back to them as an offer.
 
 Every action invalidates the feed query, so the driver sees the result of their own tap
 without waiting for the next poll. Polling exists because the changes that matter are
-made on *other* people's devices and there is no socket to push them.
+made on _other_ people's devices and there is no socket to push them.
 
 The sidebar is `hidden md:flex`, so below `md` the nav moves into a scrollable header row
 — four labels do not fit a phone, and the row scrolls sideways rather than wrapping the
@@ -171,10 +165,10 @@ header onto a second line.
 and is a separate component on purpose rather than a shared shell parameterised by nav
 items. Two nav items:
 
-| Route                  | Page                    | Shows                                     |
-| ---------------------- | ----------------------- | ----------------------------------------- |
-| `/passenger/profile`   | `PassengerProfilePage`  | read-only summary, edit form, apply, delete |
-| `/passenger/request`   | `PassengerRequestPage`  | booking form and this passenger's request history |
+| Route                | Page                   | Shows                                             |
+| -------------------- | ---------------------- | ------------------------------------------------- |
+| `/passenger/profile` | `PassengerProfilePage` | read-only summary, edit form, apply, delete       |
+| `/passenger/request` | `PassengerRequestPage` | booking form and this passenger's request history |
 
 `/passenger` is the layout, not a page, so it redirects to `/passenger/profile`, and it
 is where `homePathFor` sends a passenger — and an `admin`, who is not a driver.
@@ -184,20 +178,13 @@ is where `homePathFor` sends a passenger — and an `admin`, who is not a driver
 `/passenger/profile` by hand is not turned away; the driver area is the one that is
 closed to non-drivers, and `RequireDriver` is the only role guard that exists.
 
-The profile page is deliberately a summary *and* a form, in that order. `ProfileForm` can
+The profile page is deliberately a summary _and_ a form, in that order. `ProfileForm` can
 only edit the three fields the backend accepts, and email is absent from
 `updateProfileSchema` entirely because changing it needs a verification flow. The
 read-only `Card` above it is therefore the only place a passenger can see their own
 email or role. `PublicUser` has no `createdAt`, so there is no join date to show.
 
-`ApplyToDrive` and `DeleteAccount` are rendered at the foot of the profile page. This is
-the only area a passenger can reach, so it is where the apply CTA belongs.
-
-A passenger signs up as a passenger and becomes a driver later with the Apply button
-(`POST /drivers/apply`) in `ApplyToDrive`, which lives on the passenger profile page
-rather than in the driver area for exactly the gating reason above. Applying **replaces**
-the role in one transaction and refetches the user, so the next visit to `/` lands on
-`/driver`.
+`DeleteAccount` is rendered at the foot of the profile page.
 
 A driver has at most one active vehicle, so `VehicleCard` renders a single vehicle
 rather than a list. A `404` from `GET /vehicles` means "not registered yet" and

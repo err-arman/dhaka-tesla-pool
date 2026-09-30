@@ -38,31 +38,30 @@ The API is served under `http://localhost:<PORT>/api/v1`.
 
 ## Environment variables
 
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `PORT` | no | `8080` | Port the API listens on. Must match the frontend's `VITE_API_URL`, which defaults to `http://localhost:8080/api/v1`. |
-| `DATABASE_URL` | yes | — | PostgreSQL connection string |
-| `JWT_ACCESS_SECRET` | yes | — | Signing key for access tokens, min 32 chars |
-| `ACCESS_TOKEN_TTL_SECONDS` | no | `900` | Access token lifetime |
-| `REFRESH_TOKEN_TTL_DAYS` | no | `30` | Refresh token lifetime |
-| `CORS_ORIGINS` | no | `http://localhost:5173` | Comma-separated allowed origins |
-| `TRUST_PROXY` | no | `0` | Number of reverse proxies in front of the app. Leave at `0` unless one is really there, otherwise clients can spoof their IP and defeat the rate limiters. |
+| Variable                   | Required | Default                 | Purpose                                                                                                                                                    |
+| -------------------------- | -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                     | no       | `8080`                  | Port the API listens on. Must match the frontend's `VITE_API_URL`, which defaults to `http://localhost:8080/api/v1`.                                       |
+| `DATABASE_URL`             | yes      | —                       | PostgreSQL connection string                                                                                                                               |
+| `JWT_ACCESS_SECRET`        | yes      | —                       | Signing key for access tokens, min 32 chars                                                                                                                |
+| `ACCESS_TOKEN_TTL_SECONDS` | no       | `900`                   | Access token lifetime                                                                                                                                      |
+| `REFRESH_TOKEN_TTL_DAYS`   | no       | `30`                    | Refresh token lifetime                                                                                                                                     |
+| `CORS_ORIGINS`             | no       | `http://localhost:5173` | Comma-separated allowed origins                                                                                                                            |
+| `TRUST_PROXY`              | no       | `0`                     | Number of reverse proxies in front of the app. Leave at `0` unless one is really there, otherwise clients can spoof their IP and defeat the rate limiters. |
 
 The server refuses to start if `DATABASE_URL` or `JWT_ACCESS_SECRET` is missing
 or invalid.
 
 ## Scripts
 
-| Script | What it does |
-| --- | --- |
-| `bun run dev` | Start the server with hot reload |
-| `bun run start` | Start the server |
-| `bun run typecheck` | Type-check without emitting |
-| `bun run db:generate` | Generate a migration from the schema files |
-| `bun run db:migrate` | Apply pending migrations |
-| `bun run db:studio` | Open Drizzle Studio |
-| `bun run make-admin <email>` | Replace an account's role with `admin` |
-| `bun run test:rides` | Ride lifecycle test. Runs inside a transaction and rolls back, so it leaves the database as it found it |
+| Script                    | What it does                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`             | Start the server with hot reload                                                                                      |
+| `bun run start`           | Start the server                                                                                                      |
+| `bun run typecheck`       | Type-check without emitting                                                                                           |
+| `bun run db:generate`     | Generate a migration from the schema files                                                                            |
+| `bun run db:migrate`      | Apply pending migrations                                                                                              |
+| `bun run db:studio`       | Open Drizzle Studio                                                                                                   |
+| `bun run test:rides`      | Ride lifecycle test. Runs inside a transaction and rolls back, so it leaves the database as it found it               |
 | `bun run test:rides:http` | Ride lifecycle test over real HTTP against a running server. Skips itself rather than disturb live traffic; see below |
 
 ## Endpoints
@@ -70,30 +69,29 @@ or invalid.
 Base path `/api/v1`. Every error comes back as
 `{ "error": "CODE", "message": "text" }`, with `issues` added for validation failures.
 
-| Method | Path | Access | Body | Success |
-| --- | --- | --- | --- | --- |
-| GET | `/health` | Public | — | 200 `{ status }` |
-| POST | `/auth/signup` | Public | `fullName, email, phone?, password, role?` | 201 auth result |
-| POST | `/auth/login` | Public | `email, password` | 200 auth result |
-| POST | `/auth/refresh` | Public | `refreshToken` | 200 token pair |
-| POST | `/auth/logout` | Public | `refreshToken` | 204 |
-| GET | `/users/me` | Bearer | — | 200 user |
-| PATCH | `/users/me` | Bearer | `fullName?, phone?, avatarUrl?` | 200 user |
-| DELETE | `/users/me` | Bearer | — | 204 (soft delete) |
-| POST | `/drivers/apply` | Bearer | — | 201 driver profile |
-| GET | `/drivers/me` | Bearer | — | 200 driver profile |
-| PATCH | `/drivers/me/online` | Bearer + approved driver | `isOnline, currentZoneId?` | 200 driver profile, 409 if no vehicle, 400 without a zone to go online |
-| PATCH | `/drivers/:userId/status` | Bearer + admin | `status` | 200 driver profile |
-| GET | `/vehicles` | Bearer + approved driver | — | 200 vehicle, 404 if none |
-| PUT | `/vehicles` | Bearer + approved driver | `seats?` | 200 vehicle (upsert) |
-| PATCH | `/vehicles` | Bearer + approved driver | `seats` | 200 vehicle, 404 if none |
-| DELETE | `/vehicles` | Bearer + approved driver | — | 204 (soft delete) |
-| GET | `/locations` | Bearer | — | 200 areas |
-| POST | `/ride-requests` | Bearer | `pickupLocationId, destinationLocationId, seatsRequested?` | 201 request, 409 if one is already live |
-| GET | `/ride-requests/mine` | Bearer | — | 200 this passenger's requests, newest first |
-| POST | `/ride-requests/:requestId/cancel` | Bearer | — | 200 `{ id, status }`, 404 if not yours, 409 if too late |
-| GET | `/ride-requests/driver/feed` | Bearer + approved driver | — | 200 `{ currentTrip, offers }` |
-| POST | `/ride-requests/pools/:poolId/:action` | Bearer + approved driver | — | 200 new pool status |
+| Method | Path                                   | Access                   | Body                                                       | Success                                                                |
+| ------ | -------------------------------------- | ------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| GET    | `/health`                              | Public                   | —                                                          | 200 `{ status }`                                                       |
+| POST   | `/auth/signup`                         | Public                   | `fullName, email, phone?, password, role?`                 | 201 auth result                                                        |
+| POST   | `/auth/login`                          | Public                   | `email, password`                                          | 200 auth result                                                        |
+| POST   | `/auth/refresh`                        | Public                   | `refreshToken`                                             | 200 token pair                                                         |
+| POST   | `/auth/logout`                         | Public                   | `refreshToken`                                             | 204                                                                    |
+| GET    | `/users/me`                            | Bearer                   | —                                                          | 200 user                                                               |
+| PATCH  | `/users/me`                            | Bearer                   | `fullName?, phone?, avatarUrl?`                            | 200 user                                                               |
+| DELETE | `/users/me`                            | Bearer                   | —                                                          | 204 (soft delete)                                                      |
+| GET    | `/drivers/me`                          | Bearer                   | —                                                          | 200 driver profile                                                     |
+| PATCH  | `/drivers/me/online`                   | Bearer + approved driver | `isOnline, currentZoneId?`                                 | 200 driver profile, 409 if no vehicle, 400 without a zone to go online |
+| PATCH  | `/drivers/:userId/status`              | Bearer + admin           | `status`                                                   | 200 driver profile                                                     |
+| GET    | `/vehicles`                            | Bearer + approved driver | —                                                          | 200 vehicle, 404 if none                                               |
+| PUT    | `/vehicles`                            | Bearer + approved driver | `seats?`                                                   | 200 vehicle (upsert)                                                   |
+| PATCH  | `/vehicles`                            | Bearer + approved driver | `seats`                                                    | 200 vehicle, 404 if none                                               |
+| DELETE | `/vehicles`                            | Bearer + approved driver | —                                                          | 204 (soft delete)                                                      |
+| GET    | `/locations`                           | Bearer                   | —                                                          | 200 areas                                                              |
+| POST   | `/ride-requests`                       | Bearer                   | `pickupLocationId, destinationLocationId, seatsRequested?` | 201 request, 409 if one is already live                                |
+| GET    | `/ride-requests/mine`                  | Bearer                   | —                                                          | 200 this passenger's requests, newest first                            |
+| POST   | `/ride-requests/:requestId/cancel`     | Bearer                   | —                                                          | 200 `{ id, status }`, 404 if not yours, 409 if too late                |
+| GET    | `/ride-requests/driver/feed`           | Bearer + approved driver | —                                                          | 200 `{ currentTrip, offers }`                                          |
+| POST   | `/ride-requests/pools/:poolId/:action` | Bearer + approved driver | —                                                          | 200 new pool status                                                    |
 
 ### Error codes
 
@@ -130,7 +128,7 @@ wrong from the client side:
 
 - **Omitting a key leaves that column alone; sending `null` clears it.** `phone` and
   `avatarUrl` are nullable for exactly this reason — without it a field could be set
-  once and never removed. An empty string is *not* how you clear a field: it fails the
+  once and never removed. An empty string is _not_ how you clear a field: it fails the
   format check, so clients must send `null`.
 - **Email is not accepted at all.** It is stripped as an unknown key, which leaves an
   empty object, which the `Provide at least one field` refine then rejects. Changing
@@ -147,7 +145,6 @@ keeps working.
 - `admin` is **not** accepted. `SelfAssignableRole` in `common/types/auth.types.ts` is
   `Exclude<Role, 'admin'>`, and the signup schema's enum is a `satisfies` that array, so
   the narrowing is checked at compile time. A request with `"role":"admin"` is a 400.
-  Admins are only created by `bun run make-admin`.
 - Choosing `driver` creates the `users` row, the `driver` role and the `driver_profiles`
   row in **one transaction**. The profile cannot be a follow-up step: a user holding the
   `driver` role but no profile row would fail `requireApprovedDriver` with a 403. The
@@ -155,18 +152,16 @@ keeps working.
 - The status is `approved`, so a driver can register a vehicle immediately. The domain
   has no review step yet; `INITIAL_DRIVER_STATUS` in `drivers.service.ts` is the one
   place to change when that arrives.
-- `POST /drivers/apply` still exists for a passenger who signed up as a passenger and
-  later wants to drive. It shares `driversService.registerProfile` with signup.
 
 ### Online is not approved
 
 `driver_profiles` carries two independent notions, and conflating them is the easy
 mistake here:
 
-| Column | Set by | Means |
-| --- | --- | --- |
-| `status` | an admin, or signup | may this person drive at all |
-| `is_online` | the driver | are they working right now |
+| Column      | Set by              | Means                        |
+| ----------- | ------------------- | ---------------------------- |
+| `status`    | an admin, or signup | may this person drive at all |
+| `is_online` | the driver          | are they working right now   |
 
 `PATCH /drivers/me/online` therefore does **not** require the admin role, and
 `PATCH /drivers/:userId/status` does **not** touch `is_online`. Suspending a driver
@@ -220,8 +215,8 @@ migration and never in application code.
 Two things are enforced by the database rather than by the service layer:
 
 - `users.role` is a **single `NOT NULL` column**, so an account holds exactly one role
-  and a second grant is impossible rather than merely discouraged. `usersRepository.setRole`
-  replaces the value. This replaced the `user_roles` join table, which could hold any
+  and a second grant is impossible rather than merely discouraged. This replaced the
+  `user_roles` join table, which could hold any
   number of rows per user; see `single_role_per_user` below.
 - `sessions.refresh_token_hash` is **indexed**, because every refresh, rotation and
   logout filters on it.
@@ -237,11 +232,9 @@ how `user_roles` shipped without its primary key in the first place.
 `single_role_per_user` collapsed the `user_roles` join table into `users.role`. The
 backfill kept `admin > driver > passenger`, so no one lost a driver profile.
 
-`POST /drivers/apply` therefore **replaces** `passenger` with `driver` rather than adding
-to it, and both writes share the caller's transaction — a failure cannot leave a user
-with a driver profile and a passenger role, or the reverse. The role and the profile are
-created together on driver signup, so "has the driver role" and "has a driver profile" do
-not normally diverge.
+One consequence of the precedence: the single account that held `admin` **and** `driver`
+became `admin`, so it keeps an approved driver profile it can no longer reach, because
+`/driver` is gated on the role. Left as-is rather than silently reclassifying an admin.
 
 One consequence of the precedence: the single account that held `admin` **and** `driver`
 became `admin`, so it keeps an approved driver profile it can no longer reach, because
@@ -257,11 +250,11 @@ deliberately does not accept the old array shape, so no legacy path is left behi
 flow on top of them is implemented end to end: a passenger books, matching attaches them
 to a nearby driver's vehicle, and the driver drives the trip through to completion.
 
-| Table | One row is |
-| --- | --- |
-| `locations` | a curated Dhaka area, so a trip's endpoints need no map or geocoding API |
-| `pools` | one physical journey by one vehicle, shared by several passengers |
-| `ride_requests` | one passenger's booking, carrying the fare and seat count |
+| Table           | One row is                                                               |
+| --------------- | ------------------------------------------------------------------------ |
+| `locations`     | a curated Dhaka area, so a trip's endpoints need no map or geocoding API |
+| `pools`         | one physical journey by one vehicle, shared by several passengers        |
+| `ride_requests` | one passenger's booking, carrying the fare and seat count                |
 
 A `pools` row is the vehicle's journey; a `ride_requests` row is a passenger's place in
 one. `ride_requests.pool_id` is null only while a request is still unmatched, which the
@@ -363,7 +356,7 @@ work the queue without fighting, and it also locks the **candidate vehicle rows*
 passes running at once — two drivers coming online simultaneously, or a request arriving
 mid-pass — would otherwise both read the same vehicle as pool-free and each try to insert
 a pool for it. `pools_one_open_per_vehicle` then rejects the loser, but as a constraint
-violation it aborts that pass's whole transaction, discarding every *other* successful
+violation it aborts that pass's whole transaction, discarding every _other_ successful
 match in it. The `order by vehicles.id` immediately below the lock is what keeps the two
 passes queueing instead of deadlocking, and `of: vehicles` scopes the lock so a concurrent
 "go offline" is not blocked by a matching pass that is only reading the profile.
@@ -384,7 +377,7 @@ in `ride.cancel.ts`, **not** in `ride.pool.ts`, and that split is the point: eve
 point into the pool state machine proves the caller owns the vehicle, and a passenger
 cancelling their own seat has no vehicle to prove. Routing it through `transitionPool`
 would mean a second path into the same status column with different permissions. As
-written, the pool status that cancellation sets is visibly a *consequence* of a passenger
+written, the pool status that cancellation sets is visibly a _consequence_ of a passenger
 leaving rather than something anybody asks for.
 
 The policy, since cancelling a shared ride has several reasonable answers:
@@ -413,7 +406,7 @@ cancelled request, not in the pool transition.
 Lock ordering is the subtle part, and it is easy to get wrong. `transitionPool` locks the
 pool first and then updates the member requests, so a cancellation that locked the
 request first would invert that order against a concurrent Accept and the two would
-deadlock. Cancellation therefore locks the pool first *when there is one*, matching
+deadlock. Cancellation therefore locks the pool first _when there is one_, matching
 `transitionPool`, and decides which order it needs from an unlocked read — which can be
 stale, so it is re-verified against the locked request and retried once if a match
 attached a pool in the meantime.
@@ -428,7 +421,7 @@ because the app also has real traffic.
   that baseline rather than against zero, because "the tables are empty" is a claim about
   the world, not about whether the rollback worked.
 - `bun run test:rides:http` drives the real HTTP surface with signed tokens and cleans up
-  only the rows it created, identified by id. It refuses to run while any *other*
+  only the rows it created, identified by id. It refuses to run while any _other_
   passenger is waiting for a driver: going online runs matching over every open request,
   so the test would match a real passenger into its own pool and then delete that pool.
   Skipping is better than taking someone's ride.
@@ -486,7 +479,7 @@ The schema files remain the source of truth — `drizzle/__drizzle_migrations` a
 be trusted as a description of the current schema. The generated folder name is still
 worth keeping because `migrate` matches on `name`.
 
-A partial index that would fail to apply is a *feature* in this situation: it refuses to
+A partial index that would fail to apply is a _feature_ in this situation: it refuses to
 run against data that violates the rule, which is a data problem to resolve rather than a
 schema one to work around.
 
@@ -494,13 +487,13 @@ schema one to work around.
 
 Each module (`auth`, `users`, `drivers`, `vehicles`) is split into the same layers:
 
-| File | Responsibility |
-| --- | --- |
-| `*.routes.ts` | Maps URL and method to middleware plus controller |
+| File              | Responsibility                                                  |
+| ----------------- | --------------------------------------------------------------- |
+| `*.routes.ts`     | Maps URL and method to middleware plus controller               |
 | `*.controller.ts` | Validates input with zod, calls the service, sends the response |
-| `*.service.ts` | Business rules and transactions |
-| `*.repository.ts` | Drizzle queries only |
-| `*.validation.ts` | Zod schemas |
+| `*.service.ts`    | Business rules and transactions                                 |
+| `*.repository.ts` | Drizzle queries only                                            |
+| `*.validation.ts` | Zod schemas                                                     |
 
 Modules never form a cycle: `auth → users`, `auth → drivers`, `drivers → users`,
 `vehicles → drivers`. A module that needs data from another module calls that

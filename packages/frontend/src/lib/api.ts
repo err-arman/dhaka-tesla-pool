@@ -10,34 +10,34 @@ import {
   type PublicUser,
   type RideRequest,
   type Vehicle,
-} from './types'
-import type { Portal, RideRequestInput } from './schemas'
+} from "./types";
+import type { Portal, RideRequestInput } from "./schemas";
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080/api/v1";
 
-type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /*
  * A single in-flight refresh shared by all callers. Without this, a dashboard that
  * fires three requests on mount would send three refreshes at once, and because the
  * backend rotates the refresh token, two of them would fail and sign the user out.
  */
-let refreshInFlight: Promise<boolean> | null = null
+let refreshInFlight: Promise<boolean> | null = null;
 
 /*
  * Called when the session is unrecoverable, so the auth provider can drop to
  * 'anonymous' instead of leaving a signed-in-looking page where every request
  * fails. Set once by AuthProvider on mount; a no-op until then.
  */
-let onSessionEnded: (() => void) | null = null
+let onSessionEnded: (() => void) | null = null;
 
 export function setSessionEndedHandler(handler: (() => void) | null): void {
-  onSessionEnded = handler
+  onSessionEnded = handler;
 }
 
 function endSessionLocally(): void {
-  tokenStore.clear()
-  onSessionEnded?.()
+  tokenStore.clear();
+  onSessionEnded?.();
 }
 
 /**
@@ -47,79 +47,82 @@ function endSessionLocally(): void {
  * network error and defeat every `instanceof ApiError` branch in the app.
  */
 async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = tokenStore.getRefresh()
-  if (!refreshToken) return false
+  const refreshToken = tokenStore.getRefresh();
+  if (!refreshToken) return false;
 
   try {
     const res = await fetch(`${BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
-    })
+    });
 
-    if (!res.ok) return false
+    if (!res.ok) return false;
 
     const data = (await res.json()) as {
-      accessToken: string
-      refreshToken: string
-    }
-    tokenStore.set(data)
-    return true
+      accessToken: string;
+      refreshToken: string;
+    };
+    tokenStore.set(data);
+    return true;
   } catch {
     // Offline, DNS failure, or a 200 with an unreadable body. Treated as "could not
     // refresh" rather than as an error of its own.
-    return false
+    return false;
   }
 }
 
 async function toApiError(res: Response): Promise<ApiError> {
   let body: ApiErrorBody = {
-    error: 'NETWORK_ERROR',
+    error: "NETWORK_ERROR",
     message: `Unexpected response (${res.status})`,
-  }
+  };
 
   try {
-    body = (await res.json()) as ApiErrorBody
+    body = (await res.json()) as ApiErrorBody;
   } catch {
     // A non-JSON body (proxy error page, empty 502) leaves the fallback above.
   }
 
-  return new ApiError(res.status, body)
+  return new ApiError(res.status, body);
 }
 
 type RequestOptions = {
-  method?: Method
-  body?: unknown
+  method?: Method;
+  body?: unknown;
   /** Internal: prevents an endless refresh loop if the refreshed token also fails. */
-  _retry?: boolean
-  auth?: boolean
-}
+  _retry?: boolean;
+  auth?: boolean;
+};
 
-export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, _retry = false, auth = true } = options
+export async function api<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const { method = "GET", body, _retry = false, auth = true } = options;
 
-  const headers: Record<string, string> = {}
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
 
-  const accessToken = tokenStore.getAccess()
-  if (auth && accessToken) headers['Authorization'] = `Bearer ${accessToken}`
+  const accessToken = tokenStore.getAccess();
+  if (auth && accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  })
+  });
 
   if (res.status === 401 && auth) {
     if (!_retry && tokenStore.getRefresh()) {
       // Refresh once and replay. `auth: false` is not needed: the refresh call reads
       // the token straight from storage, so it never recurses back through here.
       refreshInFlight ??= refreshAccessToken().finally(() => {
-        refreshInFlight = null
-      })
+        refreshInFlight = null;
+      });
 
       if (await refreshInFlight) {
-        return api<T>(path, { ...options, _retry: true })
+        return api<T>(path, { ...options, _retry: true });
       }
     }
 
@@ -129,14 +132,14 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
      * earlier version skipped this on the replay path and left a token that 401'd
      * forever in storage.
      */
-    if (tokenStore.getAccess() || tokenStore.getRefresh()) endSessionLocally()
+    if (tokenStore.getAccess() || tokenStore.getRefresh()) endSessionLocally();
   }
 
-  if (!res.ok) throw await toApiError(res)
+  if (!res.ok) throw await toApiError(res);
 
-  if (res.status === 204) return undefined as T
+  if (res.status === 204) return undefined as T;
 
-  return (await res.json()) as T
+  return (await res.json()) as T;
 }
 
 export const authApi = {
@@ -146,37 +149,51 @@ export const authApi = {
    * 'driver', so the account is immediately usable.
    */
   signup: (input: {
-    fullName: string
-    email: string
-    phone?: string
-    password: string
-    role: Portal
-  }) => api<AuthResult>('/auth/signup', { method: 'POST', body: input, auth: false }),
+    fullName: string;
+    email: string;
+    phone?: string;
+    password: string;
+    role: Portal;
+  }) =>
+    api<AuthResult>("/auth/signup", {
+      method: "POST",
+      body: input,
+      auth: false,
+    }),
 
   login: (input: { email: string; password: string }) =>
-    api<AuthResult>('/auth/login', { method: 'POST', body: input, auth: false }),
+    api<AuthResult>("/auth/login", {
+      method: "POST",
+      body: input,
+      auth: false,
+    }),
 
   /** Revokes this one session. Always resolves, even if the token is already gone. */
   logout: (refreshToken: string) =>
-    api<void>('/auth/logout', { method: 'POST', body: { refreshToken }, auth: false }),
-}
+    api<void>("/auth/logout", {
+      method: "POST",
+      body: { refreshToken },
+      auth: false,
+    }),
+};
 
 export const usersApi = {
-  me: () => api<PublicUser>('/users/me'),
+  me: () => api<PublicUser>("/users/me"),
   /** `null` clears a field; omitting a key leaves it as it is. Email is not editable. */
-  update: (input: { fullName?: string; phone?: string | null; avatarUrl?: string | null }) =>
-    api<PublicUser>('/users/me', { method: 'PATCH', body: input }),
-  remove: () => api<void>('/users/me', { method: 'DELETE' }),
-}
+  update: (input: {
+    fullName?: string;
+    phone?: string | null;
+    avatarUrl?: string | null;
+  }) => api<PublicUser>("/users/me", { method: "PATCH", body: input }),
+  remove: () => api<void>("/users/me", { method: "DELETE" }),
+};
 
 export const driversApi = {
   /**
    * 404 NOT_A_DRIVER when the account never applied, which is a normal state for a
    * signed-in passenger rather than an error worth surfacing as a failure.
    */
-  me: () => api<DriverProfile>('/drivers/me'),
-
-  apply: () => api<DriverProfile>('/drivers/apply', { method: 'POST' }),
+  me: () => api<DriverProfile>("/drivers/me"),
 
   /**
    * The driver sets their own availability. Sends the value rather than toggling blind,
@@ -188,11 +205,11 @@ export const driversApi = {
    * after they have stopped.
    */
   setOnline: (isOnline: boolean, currentZoneId?: string | null) =>
-    api<DriverProfile>('/drivers/me/online', {
-      method: 'PATCH',
+    api<DriverProfile>("/drivers/me/online", {
+      method: "PATCH",
       body: { isOnline, currentZoneId: currentZoneId ?? null },
     }),
-}
+};
 
 /**
  * A driver has at most one active vehicle, so this is a singleton: no ids, no
@@ -201,21 +218,23 @@ export const driversApi = {
  */
 export const vehiclesApi = {
   /** 404 when the driver has not registered a vehicle yet. */
-  get: () => api<Vehicle>('/vehicles'),
-  put: (input: { seats?: number }) => api<Vehicle>('/vehicles', { method: 'PUT', body: input }),
+  get: () => api<Vehicle>("/vehicles"),
+  put: (input: { seats?: number }) =>
+    api<Vehicle>("/vehicles", { method: "PUT", body: input }),
   /** Partial change to a vehicle that already exists. 404 if there is none. */
-  patch: (input: { seats: number }) => api<Vehicle>('/vehicles', { method: 'PATCH', body: input }),
+  patch: (input: { seats: number }) =>
+    api<Vehicle>("/vehicles", { method: "PATCH", body: input }),
   /** Soft delete: the row stays with isActive false, so a new one can be added. */
-  remove: () => api<void>('/vehicles', { method: 'DELETE' }),
-}
+  remove: () => api<void>("/vehicles", { method: "DELETE" }),
+};
 
 /**
  * The curated area list, read-only and the same for all three roles. An empty array is a
  * normal answer, not a failure: it means the seed has not been run yet.
  */
 export const locationsApi = {
-  list: () => api<Location[]>('/locations'),
-}
+  list: () => api<Location[]>("/locations"),
+};
 
 /**
  * Ride requests.
@@ -226,11 +245,11 @@ export const locationsApi = {
  */
 export const rideRequestsApi = {
   create: (input: RideRequestInput) =>
-    api<RideRequest>('/ride-requests', { method: 'POST', body: input }),
+    api<RideRequest>("/ride-requests", { method: "POST", body: input }),
   /** Scoped to the signed-in passenger on the server; no id is sent. */
-  mine: () => api<RideRequest[]>('/ride-requests/mine'),
+  mine: () => api<RideRequest[]>("/ride-requests/mine"),
   /** Offers plus the driver's current trip, both derived server-side. */
-  driverFeed: () => api<DriverFeed>('/ride-requests/driver/feed'),
+  driverFeed: () => api<DriverFeed>("/ride-requests/driver/feed"),
   /**
    * The passenger drops their own booking. A command on a verb, not a DELETE: nothing is
    * deleted -- the row stays as `cancelled` history and keeps the pool it was matched
@@ -238,16 +257,22 @@ export const rideRequestsApi = {
    * the client can know on its own because the driver started it on another device.
    */
   cancel: (requestId: string) =>
-    api<{ id: string; status: 'cancelled' }>(`/ride-requests/${requestId}/cancel`, {
-      method: 'POST',
-    }),
+    api<{ id: string; status: "cancelled" }>(
+      `/ride-requests/${requestId}/cancel`,
+      {
+        method: "POST",
+      },
+    ),
   /**
    * The driver's next step: accept, arrive, start or complete. A command rather than a
    * patch -- there is no body, and the server rejects a move that is not legal from the
    * pool's current state with 409 rather than silently repeating it.
    */
   poolAction: (poolId: string, action: PoolAction) =>
-    api<{ id: string; status: string }>(`/ride-requests/pools/${poolId}/${action}`, {
-      method: 'POST',
-    }),
-}
+    api<{ id: string; status: string }>(
+      `/ride-requests/pools/${poolId}/${action}`,
+      {
+        method: "POST",
+      },
+    ),
+};
