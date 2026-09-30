@@ -17,11 +17,6 @@ import { AppError } from '../../common/errors/app-error';
  *
  * Returns an empty list rather than 404 when there is nothing. "No work right now" is the
  * normal state of a driver who has just come online, and it is not an error.
- *
- * Only `matched` and `accepted` are listed. `driver_arrived` and `started` are already
- * this driver's own active trip and belong in the "current trip" view; including them
- * would put an in-progress trip back in the offer list where the driver might tap Accept
- * on a trip they are already driving.
  */
 export async function feedForDriver(driverUserId: string, ex: DbExecutor = db) {
   const [driver] = await ex
